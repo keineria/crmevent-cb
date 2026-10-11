@@ -1,0 +1,188 @@
+@import 'tailwindcss';
+
+@plugin 'tailwindcss-animate';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --ease-enter: cubic-bezier(0, 0, 0, 1);
+    --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-cta: var(--cta);
+    --color-cta-foreground: var(--cta-foreground);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
+    --color-info: var(--info);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar-background);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/*
+  The default border color has changed to `currentColor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--border, currentColor);
+    }
+}
+
+:root {
+    /* Sistema de diseño "Selva" · contrastes verificados WCAG 2.1 AA (ver especificación) */
+    --background: #faf8f4; /* neutral.25 */
+    --foreground: #1c1a17; /* neutral.950 · 16.37:1 */
+    --card: #ffffff;
+    --card-foreground: #1c1a17;
+    --popover: #ffffff;
+    --popover-foreground: #1c1a17;
+    --primary: #2f5d2a; /* primary.600 · blanco encima 7.72:1 */
+    --primary-foreground: #ffffff;
+    --secondary: #eef5ea; /* primary.50 */
+    --secondary-foreground: #2f5d2a;
+    --muted: #f1eee8;
+    --muted-foreground: #6b655c; /* neutral.700 · 5.44:1 */
+    --accent: #eef5ea;
+    --accent-foreground: #1c1a17;
+    --cta: #ff8600; /* accent.500 · solo con texto oscuro (7.16:1), un uso por pantalla */
+    --cta-foreground: #1c1a17;
+    --destructive: #b91c1c; /* danger.600 · 6.47:1 */
+    --destructive-foreground: #ffffff;
+    --success: #15803d;
+    --warning: #b45309;
+    --info: #1d4ed8;
+    --border: #d9d4ca; /* neutral.200 */
+    --input: #8c857a; /* neutral.500 · borde de control 3.44:1 */
+    --ring: #2f5d2a;
+    --chart-1: #3b7a33;
+    --chart-2: #0e7490;
+    --chart-3: #b35400;
+    --chart-4: #6b655c;
+    --chart-5: #1d4ed8;
+    --radius: 0.625rem; /* radius.md 10px */
+    --sidebar-background: #ffffff;
+    --sidebar-foreground: #57524a;
+    --sidebar-primary: #2f5d2a;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #eef5ea;
+    --sidebar-accent-foreground: #1c1a17;
+    --sidebar-border: #d9d4ca;
+    --sidebar-ring: #2f5d2a;
+}
+
+.dark {
+    --background: #121411;
+    --foreground: #eceae4; /* 15.39:1 */
+    --card: #1b1e1a;
+    --card-foreground: #eceae4;
+    --popover: #1b1e1a;
+    --popover-foreground: #eceae4;
+    --primary: #7cc46a; /* 8.79:1 sobre fondo */
+    --primary-foreground: #121411;
+    --secondary: #1a2618;
+    --secondary-foreground: #7cc46a;
+    --muted: #1b1e1a;
+    --muted-foreground: #a8a39a; /* 7.38:1 */
+    --accent: #1a2618;
+    --accent-foreground: #eceae4;
+    --cta: #ff9a2e;
+    --cta-foreground: #121411;
+    --destructive: #f87171;
+    --destructive-foreground: #121411;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --info: #60a5fa;
+    --border: #2e322c;
+    --input: #5c5850;
+    --ring: #7cc46a;
+    --chart-1: #7cc46a;
+    --chart-2: #22d3ee;
+    --chart-3: #ff9a2e;
+    --chart-4: #a8a39a;
+    --chart-5: #60a5fa;
+    --sidebar-background: #1b1e1a;
+    --sidebar-foreground: #c9c5bc;
+    --sidebar-primary: #7cc46a;
+    --sidebar-primary-foreground: #121411;
+    --sidebar-accent: #1a2618;
+    --sidebar-accent-foreground: #eceae4;
+    --sidebar-border: #2e322c;
+    --sidebar-ring: #7cc46a;
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation-duration: 100ms !important;
+        transition-duration: 100ms !important;
+        scroll-behavior: auto !important;
+    }
+}
