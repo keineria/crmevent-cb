@@ -1,10 +1,21 @@
 # Despliegue en Hostinger (AlmaLinux 9 + CyberPanel 3.0)
 
-Guía para publicar el CRM en `crm.colombiabirdfair.com`. Los comandos de shell se ejecutan por SSH como `root` salvo que se indique otro usuario.
+Guía para publicar el CRM en `event.colombiabirdfair.com`. Los comandos de shell se ejecutan por SSH como `root` salvo que se indique otro usuario.
+
+## Instalación rápida
+
+Con el sitio creado en CyberPanel (PHP 8.3) y la base de datos creada, un solo script hace los pasos 1 a 5 y sirve también para actualizar:
+
+```bash
+curl -fsSLo install.sh https://raw.githubusercontent.com/keineria/crmevent-cb/main/crm/deploy/install.sh
+bash install.sh event.colombiabirdfair.com main
+```
+
+Pide los datos de la base y del administrador la primera vez. Antes de cambiar la raíz del sitio guarda una copia del `vhost.conf`. Las secciones siguientes explican lo mismo paso a paso.
 
 ## 1. Sitio y PHP
 
-1. En CyberPanel: **Websites › Create Website**, dominio `crm.colombiabirdfair.com`, PHP **8.3**. Marca SSL.
+1. En CyberPanel: **Websites › Create Website**, dominio `event.colombiabirdfair.com`, PHP **8.3**. Marca SSL.
 2. Si el subdominio no tiene SSL aún: **SSL › Manage SSL** y emite el certificado (el DNS del subdominio debe apuntar a la IP del VPS).
 3. Extensiones que necesita Laravel:
 
@@ -27,17 +38,17 @@ En **Databases › Create Database** crea la base `crm` y su usuario. Guarda la 
 
 ## 3. Código
 
-CyberPanel crea el usuario del sitio (por ejemplo `colom1234`) y la carpeta `/home/crm.colombiabirdfair.com`. Trabaja siempre como ese usuario para que los permisos queden bien.
+CyberPanel crea el usuario del sitio (por ejemplo `colom1234`) y la carpeta `/home/event.colombiabirdfair.com`. Trabaja siempre como ese usuario para que los permisos queden bien.
 
 ```bash
-SITE=/home/crm.colombiabirdfair.com
+SITE=/home/event.colombiabirdfair.com
 SITEUSER=$(stat -c %U $SITE/public_html)
 sudo -u $SITEUSER git clone https://github.com/keineria/crmevent-cb.git $SITE/app
 cd $SITE/app/crm
 sudo -u $SITEUSER cp .env.example .env
 ```
 
-Edita `.env`: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://crm.colombiabirdfair.com` y los datos `DB_*`. Después:
+Edita `.env`: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://event.colombiabirdfair.com` y los datos `DB_*`. Después:
 
 ```bash
 sudo -u $SITEUSER php83 /usr/local/bin/composer install --no-dev --optimize-autoloader
@@ -72,14 +83,14 @@ Los envíos masivos y la sincronización con el plugin corren en la cola. Instal
 dnf install -y epel-release && dnf install -y supervisor
 cat > /etc/supervisord.d/crm-worker.ini <<INI
 [program:crm-worker]
-command=/usr/local/bin/php83 /home/crm.colombiabirdfair.com/app/crm/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+command=/usr/local/bin/php83 /home/event.colombiabirdfair.com/app/crm/artisan queue:work --sleep=3 --tries=3 --max-time=3600
 user=$SITEUSER
 numprocs=1
 autostart=true
 autorestart=true
 stopwaitsecs=3600
 redirect_stderr=true
-stdout_logfile=/home/crm.colombiabirdfair.com/app/crm/storage/logs/worker.log
+stdout_logfile=/home/event.colombiabirdfair.com/app/crm/storage/logs/worker.log
 INI
 systemctl enable --now supervisord
 supervisorctl reread && supervisorctl update
@@ -88,13 +99,13 @@ supervisorctl reread && supervisorctl update
 En **Websites › Cron Jobs** (usuario del sitio) agrega una tarea cada minuto:
 
 ```
-* * * * * /usr/local/bin/php83 /home/crm.colombiabirdfair.com/app/crm/artisan schedule:run >> /dev/null 2>&1
+* * * * * /usr/local/bin/php83 /home/event.colombiabirdfair.com/app/crm/artisan schedule:run >> /dev/null 2>&1
 ```
 
 ## 6. Actualizar
 
 ```bash
-cd /home/crm.colombiabirdfair.com/app/crm
+cd /home/event.colombiabirdfair.com/app/crm
 sudo -u $SITEUSER git pull
 sudo -u $SITEUSER php83 /usr/local/bin/composer install --no-dev --optimize-autoloader
 sudo -u $SITEUSER npm ci && sudo -u $SITEUSER npm run build
@@ -105,6 +116,6 @@ supervisorctl restart crm-worker
 
 ## 7. Comprobar
 
-- `https://crm.colombiabirdfair.com` redirige al inicio de sesión.
+- `https://event.colombiabirdfair.com` redirige al inicio de sesión.
 - Entra con el admin y abre **Configuración › Correo de envíos**. Guarda los datos del proveedor, envía el correo de prueba y verifica SPF, DKIM y DMARC.
 - `storage/logs/laravel.log` no muestra errores.
