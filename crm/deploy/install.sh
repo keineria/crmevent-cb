@@ -33,9 +33,12 @@ dnf install -y git unzip supervisor >/dev/null
 dnf install -y --setopt=strict=0 lsphp83 lsphp83-common lsphp83-mysqlnd lsphp83-pdo lsphp83-intl lsphp83-bcmath \
     lsphp83-gd lsphp83-zip lsphp83-pecl-zip lsphp83-opcache lsphp83-process lsphp83-xml lsphp83-mbstring >/dev/null
 ln -sf "$PHP" /usr/local/bin/php83
-for ext in pdo_mysql intl bcmath mbstring xml zip openssl; do
-    "$PHP" -m | grep -qix "$ext" || die "a PHP 8.3 le falta la extensión ${ext}. Instálala con dnf (paquete lsphp83-...) y vuelve a ejecutar."
+# Solo las que el CRM necesita (composer.lock); intl, bcmath y zip son opcionales.
+MISSING=""
+for ext in pdo_mysql mbstring openssl dom fileinfo tokenizer ctype; do
+    "$PHP" -m | grep -qix "$ext" || MISSING="${MISSING} ${ext}"
 done
+[[ -z "$MISSING" ]] || die "a PHP 8.3 le faltan estas extensiones:${MISSING}. Revisa con: dnf search lsphp83"
 if ! command -v node >/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]]; then
     dnf module reset -y nodejs >/dev/null
     dnf module enable -y nodejs:22 >/dev/null
