@@ -35,10 +35,16 @@ dnf install -y --setopt=strict=0 lsphp83 lsphp83-common lsphp83-mysqlnd lsphp83-
 ln -sf "$PHP" /usr/local/bin/php83
 # Solo las que el CRM necesita (composer.lock); intl, bcmath y zip son opcionales.
 MISSING=""
-for ext in pdo_mysql mbstring openssl dom fileinfo tokenizer ctype; do
+for ext in pdo_mysql mbstring openssl dom xmlreader fileinfo tokenizer ctype; do
     "$PHP" -m | grep -qix "$ext" || MISSING="${MISSING} ${ext}"
 done
 [[ -z "$MISSING" ]] || die "a PHP 8.3 le faltan estas extensiones:${MISSING}. Revisa con: dnf search lsphp83"
+# zip solo hace falta para leer .xlsx en el importador; sin ella el CRM funciona y acepta .csv.
+COMPOSER_FLAGS=()
+if ! "$PHP" -m | grep -qix zip; then
+    echo "Aviso: PHP 8.3 no tiene la extensión zip. El importador solo aceptará archivos .csv hasta que la instales."
+    COMPOSER_FLAGS+=(--ignore-platform-req=ext-zip)
+fi
 if ! command -v node >/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]]; then
     dnf module reset -y nodejs >/dev/null
     dnf module enable -y nodejs:22 >/dev/null
@@ -49,6 +55,13 @@ if [[ ! -x /usr/local/bin/composer ]]; then
 fi
 composer() { as_site "$PHP" /usr/local/bin/composer "$@"; }
 artisan() { as_site "$PHP" "${CRM}/artisan" "$@"; }
+
+# El importador acepta archivos de hasta 20 MB; lsphp trae 2 MB por defecto.
+PHPINI="/usr/local/lsws/lsphp83/etc/php.ini"
+if [[ -f "$PHPINI" ]] && ! grep -qE '^upload_max_filesize\s*=\s*(2[5-9]|[3-9][0-9]|[0-9]{3,})M' "$PHPINI"; then
+    cp "$PHPINI" "${PHPINI}.bak.$(date +%Y%m%d%H%M%S)"
+    sed -i -E 's/^upload_max_filesize\s*=.*/upload_max_filesize = 25M/; s/^post_max_size\s*=.*/post_max_size = 30M/' "$PHPINI"
+fi
 
 say "Descargando el código (rama ${BRANCH})"
 if [[ -d "${APP}/.git" ]]; then
@@ -86,7 +99,7 @@ if [[ ! -f "${CRM}/.env" ]]; then
 fi
 
 say "Instalando dependencias y compilando la interfaz"
-composer install --working-dir="$CRM" --no-dev --optimize-autoloader --no-interaction --quiet
+composer install --working-dir="$CRM" --no-dev --optimize-autoloader --no-interaction --quiet "${COMPOSER_FLAGS[@]}"
 as_site bash -c 'cd "$1" && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent' _ "$CRM"
 
 grep -q '^APP_KEY=.\+' "${CRM}/.env" || artisan key:generate --force

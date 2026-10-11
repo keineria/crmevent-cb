@@ -32,7 +32,16 @@ npm run types && npm run lint && npm run format:check && npm run build
 | --- | --- |
 | Acceso, roles y usuario administrador | Listo |
 | Configuración › Correo de envíos (transaccional y difusión, prueba antes de activar, SPF/DKIM/DMARC) | Listo |
-| Contactos: importador de Excel (asistentes e interesados) y suscriptores de la web | Siguiente |
+| Contactos: lista con filtros, importador de Excel/CSV (asistentes e interesados) | Listo |
+| Suscriptores del sitio web: formulario con doble confirmación (`POST /api/v1/subscribe`) | Listo |
+| Baja de difusiones: enlace y cabeceras `List-Unsubscribe` en todo `BroadcastMailable` | Listo |
+| Campañas y plantillas | Pendiente |
 | EVR Bridge: sincronización con el plugin | Pendiente |
 
 Las variables `MAIL_*` del `.env` solo cubren correos del sistema (por ejemplo, recuperar contraseña). Los correos a participantes usan la cuenta configurada en **Configuración › Correo de envíos**, guardada cifrada con `APP_KEY`.
+
+## Difusiones y consentimiento
+
+- Toda difusión debe extender `App\Mail\BroadcastMailable` y enviarse con `App\Services\Mail\BroadcastSender`. El sender rechaza a quien no autorizó o se dio de baja; la clase añade el enlace de baja, el pie legal y las cabeceras de baja con un clic de Gmail y Outlook.
+- Un contacto importado solo queda autorizado si se marca «Estas personas autorizaron recibir boletines» al importar. Quien se dio de baja nunca se reactiva por una importación.
+- Los suscriptores del sitio quedan autorizados solo al confirmar desde el correo (doble confirmación, Ley 1581 de 2012).

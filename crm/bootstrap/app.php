@@ -11,6 +11,7 @@ use Spatie\Permission\Middleware\RoleMiddleware;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
@@ -19,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        // One-click unsubscribe (RFC 8058) is posted by mail providers, without a session.
+        $middleware->validateCsrfTokens(except: ['baja/*']);
 
         $middleware->alias([
             'role' => RoleMiddleware::class,
