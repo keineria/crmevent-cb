@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', Roles::middleware(Roles::CONTACT_VIEWERS)])->group(function () {
     Route::get('contacts', [ContactController::class, 'index'])->name('contacts.index');
+    Route::get('contacts/{contact}', [ContactController::class, 'show'])->whereNumber('contact')->name('contacts.show');
 });
 
 Route::middleware(['auth', Roles::middleware(Roles::CONTACT_IMPORTERS)])->prefix('contacts/import')->name('contacts.import.')->group(function () {

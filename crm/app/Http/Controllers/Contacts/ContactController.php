@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Contacts;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\ContactEdition;
+use App\Models\Registration;
 use App\Support\Roles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -74,6 +75,55 @@ class ContactController extends Controller
             'years' => fn () => ContactEdition::query()->distinct()->orderByDesc('year')->pluck('year'),
             'formEndpoint' => route('api.subscribe'),
             'canImport' => $request->user()->hasAnyRole(Roles::CONTACT_IMPORTERS),
+        ]);
+    }
+
+    public function show(Contact $contact): Response
+    {
+        $contact->load(['editions', 'registrationParticipants.registration', 'registrationParticipants.activities']);
+
+        return Inertia::render('contacts/show', [
+            'contact' => [
+                'id' => $contact->id,
+                'name' => $contact->fullName() ?: null,
+                'email' => $contact->email,
+                'phone' => $contact->phone,
+                'document' => trim("{$contact->document_type} {$contact->document_number}") ?: null,
+                'gender' => $contact->gender,
+                'organization' => $contact->organization,
+                'location' => collect([$contact->city, $contact->state, $contact->country])->filter()->implode(', ') ?: null,
+                'notes' => $contact->notes,
+                'source' => $contact->source,
+                'is_attendee' => $contact->is_attendee,
+                'is_interested' => $contact->is_interested,
+                'is_subscriber' => $contact->is_subscriber,
+                'status' => $this->status($contact),
+                'consent_source' => $contact->consent_source,
+                'consent_at' => $contact->consent_at?->toIso8601String(),
+                'unsubscribed_at' => $contact->unsubscribed_at?->toIso8601String(),
+                'created_at' => $contact->created_at->toIso8601String(),
+            ],
+            'editions' => $contact->editions->map(fn (ContactEdition $e) => [
+                'year' => $e->year,
+                'role' => $e->role,
+                'details' => (object) ($e->details ?? []),
+            ]),
+            'registrations' => $contact->registrationParticipants->sortByDesc(fn ($p) => $p->registration->ordered_at)->values()->map(fn ($p) => [
+                'order' => $p->registration->number,
+                'status' => $p->registration->status,
+                'status_label' => Registration::STATUS_LABELS[$p->registration->status] ?? $p->registration->status,
+                'ordered_at' => $p->registration->ordered_at?->toIso8601String(),
+                'shirt_size' => $p->shirt_size,
+                'meal_type' => $p->meal_type,
+                'allergies' => $p->allergies,
+                'activities' => $p->activities->map(fn ($a) => [
+                    'name' => $a->name,
+                    'type' => $a->type,
+                    'date' => $a->event_date?->toDateString(),
+                    'status' => $a->status,
+                    'total' => (float) $a->total,
+                ]),
+            ]),
         ]);
     }
 

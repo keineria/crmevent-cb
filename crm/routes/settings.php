@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Settings\MailSettingsController;
 use App\Http\Controllers\Settings\PasswordController;
+use App\Http\Controllers\Settings\PluginConnectionController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Support\Roles;
 use Illuminate\Support\Facades\Route;
@@ -31,4 +32,9 @@ Route::middleware(['auth', 'role:'.Roles::ADMIN])->group(function () {
     Route::post('settings/mail/{profile}/dns', [MailSettingsController::class, 'dns'])
         ->middleware('throttle:20,1')
         ->name('mail-settings.dns');
+
+    Route::get('settings/plugin', [PluginConnectionController::class, 'edit'])->name('plugin-connection.edit');
+    Route::put('settings/plugin', [PluginConnectionController::class, 'update'])->name('plugin-connection.update');
+    Route::post('settings/plugin/test', [PluginConnectionController::class, 'test'])->middleware('throttle:10,1')->name('plugin-connection.test');
+    Route::post('settings/plugin/sync', [PluginConnectionController::class, 'sync'])->middleware('throttle:10,1')->name('plugin-connection.sync');
 });

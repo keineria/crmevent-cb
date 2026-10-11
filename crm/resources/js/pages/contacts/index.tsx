@@ -188,7 +188,9 @@ export default function ContactsIndex() {
                                 {contacts.data.map((c) => (
                                     <tr key={c.id} className="align-top">
                                         <td className="px-4 py-3">
-                                            <div className="font-medium">{c.name ?? c.email ?? c.phone ?? 'Sin nombre'}</div>
+                                            <Link href={`/contacts/${c.id}`} className="font-medium underline-offset-4 hover:underline">
+                                                {c.name ?? c.email ?? c.phone ?? 'Sin nombre'}
+                                            </Link>
                                             <div className="text-muted-foreground">{[c.email, c.phone].filter(Boolean).join(' · ')}</div>
                                             {c.organization && <div className="text-muted-foreground text-xs">{c.organization}</div>}
                                         </td>

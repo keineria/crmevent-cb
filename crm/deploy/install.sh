@@ -114,6 +114,10 @@ if ! grep -q "docRoot.*app/crm/public" "$VHOST"; then
     grep -q "autoLoadHtaccess" "$VHOST" || sed -i -E '0,/^\s*rewrite\s*\{/s##rewrite  {\n  autoLoadHtaccess        1#' "$VHOST"
     chown lsadm:nobody "$VHOST" 2>/dev/null || true
 fi
+# CyberPanel writes Let's Encrypt challenges under public_html; expose them from the new docRoot so SSL renews.
+mkdir -p "${SITE}/public_html/.well-known"
+chown "$SITEUSER": "${SITE}/public_html/.well-known"
+ln -sfn "${SITE}/public_html/.well-known" "${CRM}/public/.well-known"
 systemctl restart lsws
 
 say "Configurando la cola (Supervisor) y las tareas programadas (cron)"

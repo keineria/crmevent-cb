@@ -1,0 +1,31 @@
+name: Deploy
+
+# Updates the CRM on the VPS by re-running crm/deploy/install.sh over SSH, for the branch chosen in
+# "Run workflow". Needs repository secrets DEPLOY_HOST, DEPLOY_USER and DEPLOY_SSH_KEY (optional DEPLOY_PORT).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run installer on the server
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: BRANCH,SHA
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            curl -fsSLo /root/crm-install.sh "https://raw.githubusercontent.com/keineria/crmevent-cb/${SHA}/crm/deploy/install.sh"
+            bash /root/crm-install.sh event.colombiabirdfair.com "$BRANCH" </dev/null

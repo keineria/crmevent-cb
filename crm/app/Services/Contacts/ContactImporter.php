@@ -12,14 +12,17 @@ use Illuminate\Support\Str;
 /**
  * Creates or completes contacts from an uploaded spreadsheet using the column mapping the user chose.
  *
- * Existing contacts are matched by email, then by document number, then (rows without email) by phone. Saved values are never
- * overwritten, and a contact who unsubscribed stays unsubscribed even if the file says otherwise.
+ * People are matched by document number first, then by email, then (without either) by phone and first name
+ * or by full name.
+ * Families often register under one email or phone, so a shared email never merges two people with
+ * different documents: the second one is saved without email. Saved values are never overwritten, and a
+ * contact who unsubscribed stays unsubscribed even if the file says otherwise.
  */
 class ContactImporter
 {
     private const PROGRESS_EVERY = 100;
 
-    public function __construct(private SpreadsheetReader $reader) {}
+    public function __construct(private SpreadsheetReader $reader, private ContactMatcher $matcher) {}
 
     public function run(ContactImport $import): void
     {
@@ -28,26 +31,37 @@ class ContactImporter
         $counts = ['created_count' => 0, 'updated_count' => 0, 'skipped_count' => 0];
         $errors = [];
         $mapping = array_filter($import->mapping ?? []);
+        $headers = $import->headers ?? [];
         $path = Storage::disk('local')->path($import->path);
 
         foreach ($this->reader->rows($path, pathinfo($import->path, PATHINFO_EXTENSION)) as $index => $row) {
-            if ($index === 0 || $this->isBlank($row)) {
+            if ($index === 0 || $this->isBlank($row) || ImportFields::isHeaderRow($row, $headers)) {
                 continue;
             }
 
             $values = [];
+            $details = [];
             foreach ($mapping as $column => $field) {
-                $values[$field] = $row[(int) $column] ?? '';
+                $value = trim((string) ($row[(int) $column] ?? ''));
+                if ($field === ImportFields::DETAIL) {
+                    if ($value !== '') {
+                        $details[$headers[(int) $column] ?: 'Columna '.((int) $column + 1)] = Str::limit($value, 500, '');
+                    }
+                } else {
+                    $values[$field] = $value;
+                }
             }
 
-            $error = null;
-            $outcome = DB::transaction(function () use ($import, $values, &$error) {
-                return $this->importRow($import, $values, $error);
+            $messages = [];
+            $outcome = DB::transaction(function () use ($import, $values, $details, &$messages) {
+                return $this->importRow($import, $values, $details, $messages);
             });
             $counts[$outcome.'_count']++;
 
-            if ($error !== null && count($errors) < ContactImport::MAX_ERRORS) {
-                $errors[] = ['row' => $index + 1, 'message' => $error];
+            foreach ($messages as $message) {
+                if (count($errors) < ContactImport::MAX_ERRORS) {
+                    $errors[] = ['row' => $index + 1, 'message' => $message];
+                }
             }
 
             if ($index % self::PROGRESS_EVERY === 0) {
@@ -67,42 +81,48 @@ class ContactImporter
 
     /**
      * @param  array<string, string>  $values
+     * @param  array<string, string>  $details
+     * @param  list<string>  $messages  problems to show in the import report
      * @return 'created'|'updated'|'skipped'
      */
-    private function importRow(ContactImport $import, array $values, ?string &$error): string
+    private function importRow(ContactImport $import, array $values, array $details, array &$messages): string
     {
         $data = $this->clean($values);
 
         if (($data['email'] ?? null) === false) {
-            $error = "Correo no válido: «{$values['email']}».";
+            $messages[] = "Correo no válido: «{$values['email']}». Se guardó sin correo.";
+            unset($data['email']);
+        }
+
+        if (empty($data['email']) && empty($data['document_number']) && empty($data['phone'])
+            && (empty($data['first_name']) || empty($data['last_name']))) {
+            $messages[] = 'Sin correo, documento, teléfono ni nombre completo: no se puede identificar a la persona.';
 
             return 'skipped';
         }
 
-        if (empty($data['email']) && empty($data['document_number']) && empty($data['phone'])) {
-            $error = 'Sin correo, documento ni teléfono.';
+        $contact = $this->matcher->find($data);
 
-            return 'skipped';
+        // The email belongs to someone else (a relative or a colleague who registered them): keep it with its owner.
+        if (! empty($data['email']) && $contact?->email !== $data['email'] && Contact::where('email', $data['email'])->exists()) {
+            $who = trim(($data['first_name'] ?? '').' '.($data['last_name'] ?? '')) ?: 'Esta persona';
+            $messages[] = "{$who} comparte el correo {$data['email']} con otra persona; se guardó sin correo.";
+            unset($data['email']);
         }
 
-        $contact = $this->find($data);
         $isNew = $contact === null;
-        $contact ??= new Contact(['source' => Contact::SOURCE_IMPORT, 'email' => $data['email'] ?? null]);
+        $contact ??= new Contact(['source' => Contact::SOURCE_IMPORT]);
 
-        foreach (Contact::PROFILE_FIELDS as $field) {
+        foreach ([...Contact::PROFILE_FIELDS, 'email'] as $field) {
             if (! empty($data[$field]) && blank($contact->{$field})) {
                 $contact->{$field} = $data[$field];
             }
         }
 
-        if ($contact->email === null && ! empty($data['email'])) {
-            $contact->email = $data['email'];
-        }
-
         $role = $import->kind;
         $contact->{$role === ContactImport::KIND_ATTENDEE ? 'is_attendee' : 'is_interested'} = true;
 
-        if ($import->has_consent && $contact->unsubscribed_at === null && ! $contact->marketing_consent) {
+        if ($import->has_consent && $contact->unsubscribed_at === null && ! $contact->marketing_consent && $contact->email) {
             $contact->grantConsent("Importación «{$import->original_name}»");
         }
 
@@ -110,17 +130,22 @@ class ContactImporter
         $contact->save();
 
         $year = $data['edition_year'] ?? $import->edition_year;
-        $addedEdition = false;
+        $editionChanged = false;
         if ($year) {
-            $addedEdition = ContactEdition::firstOrCreate(
+            $edition = ContactEdition::firstOrNew(
                 ['contact_id' => $contact->id, 'year' => $year, 'role' => $role],
                 ['contact_import_id' => $import->id],
-            )->wasRecentlyCreated;
+            );
+            if ($details) {
+                $edition->details = array_merge($edition->details ?? [], $details);
+            }
+            $editionChanged = ! $edition->exists || $edition->isDirty();
+            $edition->save();
         }
 
         return match (true) {
             $isNew => 'created',
-            $dirty || $addedEdition => 'updated',
+            $dirty || $editionChanged => 'updated',
             default => 'skipped',
         };
     }
@@ -132,26 +157,30 @@ class ContactImporter
     private function clean(array $values): array
     {
         $data = array_map(fn ($v) => trim(preg_replace('/\s+/u', ' ', (string) $v)), $values);
-        $data = array_filter($data, fn ($v) => $v !== '' && $v !== '-');
+        $data = array_filter($data, fn ($v) => $v !== '' && $v !== '-' && ! in_array(Str::lower($v), ['n/a', 'na', 'no aplica', 'null'], true));
 
         if (isset($data['full_name']) && empty($data['first_name']) && empty($data['last_name'])) {
             [$data['first_name'], $data['last_name']] = $this->splitName($data['full_name']);
         }
         unset($data['full_name']);
 
-        foreach (['first_name', 'last_name', 'city'] as $field) {
+        foreach (['first_name', 'last_name', 'city', 'state', 'gender'] as $field) {
             if (isset($data[$field])) {
                 $data[$field] = Str::title(Str::lower($data[$field]));
             }
         }
 
         if (isset($data['email'])) {
-            $email = Str::lower($data['email']);
+            $email = Str::lower(str_replace(' ', '', $data['email']));
             $data['email'] = filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : false;
         }
 
         if (isset($data['document_number'])) {
-            $data['document_number'] = preg_replace('/[\s.\-]/', '', $data['document_number']);
+            $data['document_number'] = Str::upper(preg_replace('/[\s.\-]/', '', $data['document_number']));
+        }
+
+        if (isset($data['phone'])) {
+            $data['phone'] = preg_replace('/[^\d+]/', '', $data['phone']) ?: null;
         }
 
         if (isset($data['edition_year'])) {
@@ -161,11 +190,16 @@ class ContactImporter
 
         foreach (Contact::PROFILE_FIELDS as $field) {
             if (isset($data[$field]) && is_string($data[$field])) {
-                $data[$field] = Str::limit($data[$field], $field === 'notes' ? 2000 : 250, '');
+                $data[$field] = Str::limit($data[$field], match ($field) {
+                    'notes' => 2000,
+                    'document_type', 'gender' => 30,
+                    'phone', 'document_number' => 40,
+                    default => 120,
+                }, '');
             }
         }
 
-        return array_filter($data, fn ($v) => $v !== null);
+        return array_filter($data, fn ($v) => $v !== null && $v !== '');
     }
 
     /**
@@ -183,33 +217,6 @@ class ContactImporter
             3 => [$parts[0], "{$parts[1]} {$parts[2]}"],
             default => [implode(' ', array_slice($parts, 0, -2)), implode(' ', array_slice($parts, -2))],
         };
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function find(array $data): ?Contact
-    {
-        if (! empty($data['email'])) {
-            $contact = Contact::where('email', $data['email'])->first();
-            if ($contact) {
-                return $contact;
-            }
-        }
-
-        if (! empty($data['document_number'])) {
-            $contact = Contact::where('document_number', $data['document_number'])->first();
-            // A document match with a different email is a different person sharing a typo; keep them apart.
-            if ($contact && ($contact->email === null || empty($data['email']))) {
-                return $contact;
-            }
-        }
-
-        if (empty($data['email']) && ! empty($data['phone'])) {
-            return Contact::where('phone', $data['phone'])->first();
-        }
-
-        return null;
     }
 
     /**

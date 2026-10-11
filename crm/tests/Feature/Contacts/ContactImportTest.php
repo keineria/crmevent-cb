@@ -81,11 +81,12 @@ class ContactImportTest extends TestCase
 
         $import->refresh();
         $this->assertSame(ContactImport::STATUS_DONE, $import->status);
-        $this->assertSame([1, 0, 2], [$import->created_count, $import->updated_count, $import->skipped_count]);
-        $this->assertCount(2, $import->errors);
+        // Luis keeps his name without the invalid email; "Sin Datos" is identified by full name.
+        $this->assertSame([3, 0, 0], [$import->created_count, $import->updated_count, $import->skipped_count]);
+        $this->assertCount(1, $import->errors);
         Storage::disk('local')->assertMissing($import->path);
 
-        $ana = Contact::sole();
+        $ana = Contact::where('email', 'ana@example.com')->sole();
         $this->assertSame(['Ana María', 'Pérez Gómez', 'ana@example.com', 'Medellín'], [$ana->first_name, $ana->last_name, $ana->email, $ana->city]);
         $this->assertTrue($ana->is_attendee);
         $this->assertTrue($ana->marketing_consent);
@@ -184,6 +185,37 @@ class ContactImportTest extends TestCase
             ->assertSessionHasErrors('file');
 
         $this->assertSame(0, ContactImport::count());
+    }
+
+    public function test_fair_master_layout_keeps_families_apart_and_saves_details(): void
+    {
+        $import = $this->upload($this->csv([
+            ['FECHA', 'NOMBRES', 'APELLIDOS', 'GÉNERO', 'DPTO / EST', 'EMAIL', 'TELÉFONO', 'TIPO ID', '#ID', 'REGISTRO', 'VIERNES', 'CAMISA'],
+            ['2025-10-17', 'Oscar', 'Roque', 'Hombre', 'Valle', 'familia@example.com', '3001112233', 'CC', '1.053.000', 'Plan Solo Conferencias', '', 'M'],
+            ['2025-10-17', 'Uriel', 'Roque', 'Hombre', 'Valle', 'familia@example.com', '3001112233', 'Pasaporte', 'C1V22', 'Plan Solo Salidas', 'Km 18', 'L'],
+            ['NOMBRES', 'NOMBRES', 'APELLIDOS', 'GÉNERO', 'DPTO / EST', 'EMAIL', 'TELÉFONO', 'TIPO ID', '#ID', 'REGISTRO', 'VIERNES', 'CAMISA'],
+            ['2025-10-18', 'María', 'Chávez', 'Mujer', 'Cundinamarca', '', '', '', '', 'Plan Conferencias + 3 Salidas', '', ''],
+        ], ';', false));
+
+        $this->assertSame(['detail', 'first_name', 'last_name', 'gender', 'state', 'email', 'phone', 'document_type', 'document_number', 'detail', 'detail', 'detail'], $import->mapping);
+        $this->assertSame(3, $import->total_rows);
+
+        $this->runImport($import);
+
+        $this->assertSame(3, Contact::count(), Contact::pluck('first_name')->implode(','));
+        $oscar = Contact::where('document_number', '1053000')->sole();
+        $uriel = Contact::where('document_number', 'C1V22')->sole();
+        $this->assertSame('familia@example.com', $oscar->email);
+        $this->assertNull($uriel->email);
+        $this->assertSame(['Hombre', 'Valle', 'Pasaporte'], [$uriel->gender, $uriel->state, $uriel->document_type]);
+        $this->assertSame(['FECHA' => '2025-10-17', 'REGISTRO' => 'Plan Solo Salidas', 'VIERNES' => 'Km 18', 'CAMISA' => 'L'], $uriel->editions()->sole()->details);
+        $this->assertStringContainsString('comparte el correo', $import->fresh()->errors[0]['message']);
+
+        // Name-only rows are kept and matched by full name on the next file.
+        $again = $this->upload($this->csv([['NOMBRES', 'APELLIDOS', 'EMAIL'], ['MARÍA', 'CHÁVEZ', 'maria@example.com']], ';', false), ['edition_year' => 2026]);
+        $this->runImport($again);
+        $this->assertSame(3, Contact::count());
+        $this->assertSame('maria@example.com', Contact::where('last_name', 'Chávez')->sole()->email);
     }
 
     public function test_only_admin_and_marketing_can_import(): void

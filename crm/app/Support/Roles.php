@@ -22,6 +22,9 @@ final class Roles
     /** Roles that can see the contact list. */
     public const CONTACT_VIEWERS = [self::ADMIN, self::REGISTRATION_ADMIN, self::ANALYST, self::MARKETING];
 
+    /** Roles that can see registrations and activities synced from the plugin. */
+    public const REGISTRATION_VIEWERS = [self::ADMIN, self::REGISTRATION_ADMIN, self::REGISTRATION, self::ANALYST];
+
     /** Roles that can import spreadsheets of contacts. */
     public const CONTACT_IMPORTERS = [self::ADMIN, self::MARKETING];
 

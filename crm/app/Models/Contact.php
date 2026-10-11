@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 #[Fillable([
-    'first_name', 'last_name', 'email', 'phone', 'document_number', 'country', 'city', 'organization', 'notes',
+    'first_name', 'last_name', 'gender', 'email', 'phone', 'document_type', 'document_number', 'country', 'state', 'city', 'organization', 'notes',
     'is_attendee', 'is_interested', 'is_subscriber', 'source',
     'marketing_consent', 'consent_at', 'consent_source', 'consent_ip',
     'subscription_requested_at', 'subscribed_at', 'unsubscribed_at',
@@ -30,7 +30,7 @@ class Contact extends Model
     public const SOURCE_PLUGIN = 'plugin';
 
     /** Profile fields an import may fill; it never overwrites a value already saved. */
-    public const PROFILE_FIELDS = ['first_name', 'last_name', 'phone', 'document_number', 'country', 'city', 'organization', 'notes'];
+    public const PROFILE_FIELDS = ['first_name', 'last_name', 'gender', 'phone', 'document_type', 'document_number', 'country', 'state', 'city', 'organization', 'notes'];
 
     protected function casts(): array
     {
@@ -62,6 +62,11 @@ class Contact extends Model
     public function editions(): HasMany
     {
         return $this->hasMany(ContactEdition::class)->orderByDesc('year');
+    }
+
+    public function registrationParticipants(): HasMany
+    {
+        return $this->hasMany(RegistrationParticipant::class);
     }
 
     /**

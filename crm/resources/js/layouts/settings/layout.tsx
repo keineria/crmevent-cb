@@ -27,7 +27,11 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     const currentPath = window.location.pathname;
     const { auth } = usePage<SharedData>().props;
     const items = auth.roles.includes('Admin')
-        ? [...sidebarNavItems, { title: 'Correo de envíos', url: '/settings/mail', icon: null }]
+        ? [
+              ...sidebarNavItems,
+              { title: 'Correo de envíos', url: '/settings/mail', icon: null },
+              { title: 'Plugin de inscripciones', url: '/settings/plugin', icon: null },
+          ]
         : sidebarNavItems;
 
     return (

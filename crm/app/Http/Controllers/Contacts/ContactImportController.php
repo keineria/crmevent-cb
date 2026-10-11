@@ -64,7 +64,7 @@ class ContactImportController extends Controller
 
                     continue;
                 }
-                if (implode('', $row) === '') {
+                if (implode('', $row) === '' || ImportFields::isHeaderRow($row, $headers)) {
                     continue;
                 }
                 $total++;
@@ -133,7 +133,7 @@ class ContactImportController extends Controller
         ]);
 
         $mapping = array_slice(array_replace(array_fill(0, $columns, null), $data['mapping']), 0, $columns, true);
-        $chosen = array_filter($mapping);
+        $chosen = array_filter($mapping, fn ($field) => $field && $field !== ImportFields::DETAIL);
 
         if (count($chosen) !== count(array_unique($chosen))) {
             throw ValidationException::withMessages(['mapping' => 'Cada campo del CRM solo puede asignarse a una columna.']);
