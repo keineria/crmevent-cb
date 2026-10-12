@@ -24,6 +24,7 @@ Route::get('e/c/{token}', [CampaignTrackingController::class, 'click'])->middlew
 
 require __DIR__.'/contacts.php';
 require __DIR__.'/campaigns.php';
+require __DIR__.'/finance.php';
 require __DIR__.'/registrations.php';
 require __DIR__.'/checkin.php';
 require __DIR__.'/portal.php';

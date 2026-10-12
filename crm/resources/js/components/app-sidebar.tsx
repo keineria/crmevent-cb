@@ -3,15 +3,17 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { CalendarDays, ChartColumn, LayoutGrid, Mail, ScanLine, Ticket, Users } from 'lucide-react';
+import { CalendarDays, ChartColumn, LayoutGrid, Mail, PiggyBank, ScanLine, Ticket, Users } from 'lucide-react';
 import AppLogo from './app-logo';
 
-// Keep in sync with Roles::CONTACT_VIEWERS, Roles::REGISTRATION_VIEWERS, Roles::CHECKIN_STAFF, Roles::CAMPAIGN_VIEWERS and Roles::REPORT_VIEWERS.
+// Keep in sync with Roles::CONTACT_VIEWERS, Roles::REGISTRATION_VIEWERS, Roles::CHECKIN_STAFF, Roles::CAMPAIGN_VIEWERS,
+// Roles::REPORT_VIEWERS and Roles::FINANCE_VIEWERS.
 const CONTACT_VIEWERS = ['Admin', 'Admin registro', 'Analista', 'Marketing'];
 const REGISTRATION_VIEWERS = ['Admin', 'Admin registro', 'Registro', 'Analista'];
 const CHECKIN_STAFF = ['Admin', 'Admin registro', 'Registro', 'Registro salidas'];
 const CAMPAIGN_VIEWERS = ['Admin', 'Marketing', 'Analista'];
 const REPORT_VIEWERS = ['Admin', 'Admin registro', 'Analista'];
+const FINANCE_VIEWERS = ['Admin', 'Analista'];
 
 export function AppSidebar() {
     const { auth } = usePage<SharedData>().props;
@@ -27,6 +29,7 @@ export function AppSidebar() {
         ...(auth.roles.some((r) => CONTACT_VIEWERS.includes(r)) ? [{ title: 'Contactos', url: '/contacts', icon: Users }] : []),
         ...(auth.roles.some((r) => CAMPAIGN_VIEWERS.includes(r)) ? [{ title: 'Campañas', url: '/campaigns', icon: Mail }] : []),
         ...(auth.roles.some((r) => REPORT_VIEWERS.includes(r)) ? [{ title: 'Reportes', url: '/reports', icon: ChartColumn }] : []),
+        ...(auth.roles.some((r) => FINANCE_VIEWERS.includes(r)) ? [{ title: 'Finanzas', url: '/finance', icon: PiggyBank }] : []),
     ];
 
     return (
