@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Bold, Braces, Heading2, Image, Italic, Link2, List, Monitor, MousePointerClick, Smartphone } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { type Content } from './types';
 
 type Errors = Partial<Record<keyof Content, string>>;
@@ -17,13 +17,33 @@ interface Props {
     errors: Errors;
     fields: Record<string, string>;
     nameLabel?: string;
+    /** Hides the name field, for emails that have a fixed one. */
+    showName?: boolean;
+    /** Fields that are a whole block (a QR, a list) and go on their own line. */
+    blockFields?: string[];
+    /** Server route that renders the preview. */
+    previewUrl?: string;
+    previewNote?: string;
+    /** Replaces the last formatting tip (unsubscribe link and legal footer). */
+    footerNote?: ReactNode;
 }
 
 /**
  * Name, subject, preview text and Markdown body of a campaign or template, with a live preview
  * rendered by the server exactly as it will be sent.
  */
-export default function ContentEditor({ data, setData, errors, fields, nameLabel = 'Nombre interno' }: Props) {
+export default function ContentEditor({
+    data,
+    setData,
+    errors,
+    fields,
+    nameLabel = 'Nombre interno',
+    showName = true,
+    blockFields = [],
+    previewUrl = '/campaigns/preview',
+    previewNote = 'Con datos de ejemplo (María Pérez, Cali). Cada persona verá los suyos.',
+    footerNote = 'El enlace para darse de baja y el pie legal se agregan solos al final.',
+}: Props) {
     const body = useRef<HTMLTextAreaElement>(null);
     const lastFocused = useRef<'subject' | 'body'>('body');
 
@@ -54,6 +74,10 @@ export default function ContentEditor({ data, setData, errors, fields, nameLabel
         });
 
     const insertField = (key: string) => {
+        if (blockFields.includes(key)) {
+            edit(() => ({ text: `{{${key}}}` }), true);
+            return;
+        }
         const tag = key === 'nombre' ? '{{nombre|amigo}}' : `{{${key}}}`;
         if (lastFocused.current === 'subject') {
             setData('subject', `${data.subject}${data.subject && !data.subject.endsWith(' ') ? ' ' : ''}${tag}`);
@@ -112,11 +136,13 @@ export default function ContentEditor({ data, setData, errors, fields, nameLabel
     return (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="grid content-start gap-4">
-                <div className="grid gap-2">
-                    <Label htmlFor="name">{nameLabel}</Label>
-                    <Input id="name" required value={data.name} onChange={(e) => setData('name', e.target.value)} />
-                    <InputError message={errors.name} />
-                </div>
+                {showName && (
+                    <div className="grid gap-2">
+                        <Label htmlFor="name">{nameLabel}</Label>
+                        <Input id="name" required value={data.name} onChange={(e) => setData('name', e.target.value)} />
+                        <InputError message={errors.name} />
+                    </div>
+                )}
                 <div className="grid gap-2">
                     <Label htmlFor="subject">Asunto</Label>
                     <Input
@@ -193,18 +219,18 @@ export default function ContentEditor({ data, setData, errors, fields, nameLabel
                             <li>
                                 Datos de cada persona: <code>{'{{nombre}}'}</code>. Con respaldo si falta: <code>{'{{nombre|amigo}}'}</code>.
                             </li>
-                            <li>El enlace para darse de baja y el pie legal se agregan solos al final.</li>
+                            <li>{footerNote}</li>
                         </ul>
                     </details>
                 </div>
             </div>
 
-            <Preview subject={data.subject} preheader={data.preheader} body={data.body} />
+            <Preview subject={data.subject} preheader={data.preheader} body={data.body} url={previewUrl} note={previewNote} />
         </div>
     );
 }
 
-function Preview({ subject, preheader, body }: { subject: string; preheader: string; body: string }) {
+function Preview({ subject, preheader, body, url, note }: { subject: string; preheader: string; body: string; url: string; note: string }) {
     const [html, setHtml] = useState('');
     const [renderedSubject, setRenderedSubject] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -212,7 +238,7 @@ function Preview({ subject, preheader, body }: { subject: string; preheader: str
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            crmJson<{ subject: string; html: string }>('/campaigns/preview', { subject, preheader, body })
+            crmJson<{ subject: string; html: string }>(url, { subject, preheader, body })
                 .then((r) => {
                     setHtml(r.html);
                     setRenderedSubject(r.subject);
@@ -221,7 +247,7 @@ function Preview({ subject, preheader, body }: { subject: string; preheader: str
                 .catch((e: Error) => setError(e.message));
         }, 400);
         return () => clearTimeout(timer);
-    }, [subject, preheader, body]);
+    }, [subject, preheader, body, url]);
 
     return (
         <section aria-label="Vista previa" className="grid content-start gap-2 xl:sticky xl:top-4">
@@ -253,7 +279,7 @@ function Preview({ subject, preheader, body }: { subject: string; preheader: str
                         className={`mx-auto block h-[640px] rounded-md border bg-white transition-[width] ${mobile ? 'w-[375px] max-w-full' : 'w-full'}`}
                     />
                 )}
-                <p className="text-muted-foreground mt-2 text-xs">Con datos de ejemplo (María Pérez, Cali). Cada persona verá los suyos.</p>
+                <p className="text-muted-foreground mt-2 text-xs">{note}</p>
             </div>
         </section>
     );

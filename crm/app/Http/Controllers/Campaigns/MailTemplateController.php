@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Campaign;
 use App\Models\MailTemplate;
 use App\Services\Campaigns\CampaignRenderer;
+use App\Support\Roles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,10 +14,11 @@ use Inertia\Response;
 
 class MailTemplateController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         return Inertia::render('campaigns/templates', [
-            'templates' => MailTemplate::orderBy('name')->get()->map(fn (MailTemplate $t) => [
+            'canEditQrMail' => $request->user()->hasAnyRole(Roles::QR_MAIL_EDITORS),
+            'templates' => MailTemplate::forCampaigns()->orderBy('name')->get()->map(fn (MailTemplate $t) => [
                 'id' => $t->id,
                 'name' => $t->name,
                 'subject' => $t->subject,
@@ -44,6 +46,8 @@ class MailTemplateController extends Controller
 
     public function edit(MailTemplate $template): Response
     {
+        abort_if($template->system_key !== null, 404);
+
         return Inertia::render('campaigns/template-edit', [
             'template' => $template->only(['id', 'name', 'subject', 'preheader', 'body']),
             'fields' => CampaignRenderer::FIELDS,
@@ -52,6 +56,8 @@ class MailTemplateController extends Controller
 
     public function update(Request $request, MailTemplate $template): RedirectResponse
     {
+        abort_if($template->system_key !== null, 404);
+
         $data = $request->validate(CampaignController::contentRules());
 
         $template->update([
@@ -67,6 +73,8 @@ class MailTemplateController extends Controller
 
     public function destroy(MailTemplate $template): RedirectResponse
     {
+        abort_if($template->system_key !== null, 404);
+
         $template->delete();
 
         return to_route('campaigns.templates.index')->with('success', 'Plantilla eliminada.');

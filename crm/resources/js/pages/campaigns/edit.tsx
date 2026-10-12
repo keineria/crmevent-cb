@@ -1,6 +1,7 @@
 import ContentEditor from '@/components/campaigns/content-editor';
 import Flash from '@/components/campaigns/flash';
 import SegmentBuilder, { type SegmentOptions } from '@/components/campaigns/segment-builder';
+import TestDialog from '@/components/campaigns/test-dialog';
 import { type CampaignStatus, type Content, type Segment, StatusBadge } from '@/components/campaigns/types';
 import { crmJson } from '@/components/checkin/types';
 import Heading from '@/components/heading';
@@ -9,12 +10,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { number } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { CalendarClock, LayoutTemplate, LoaderCircle, Save, Send, TestTube2, Trash2, TriangleAlert } from 'lucide-react';
+import { CalendarClock, LayoutTemplate, LoaderCircle, Save, Send, Trash2, TriangleAlert } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
 
 interface PageProps {
@@ -67,6 +67,7 @@ export default function CampaignEdit() {
                             {isDirty ? 'Guardar' : 'Guardado'}
                         </Button>
                         <TestDialog
+                            description="Llega solo a este correo, con datos de ejemplo y «[Prueba]» en el asunto. No cuenta en las estadísticas."
                             defaultEmail={testEmail}
                             disabled={!sender.ready}
                             onSend={(email) => save(() => router.post(`/campaigns/${campaign.id}/test`, { email }, { preserveScroll: true }))}
@@ -141,47 +142,6 @@ export default function CampaignEdit() {
                 </div>
             </form>
         </AppLayout>
-    );
-}
-
-function TestDialog({ defaultEmail, disabled, onSend }: { defaultEmail: string; disabled: boolean; onSend: (email: string) => void }) {
-    const [open, setOpen] = useState(false);
-    const [email, setEmail] = useState(defaultEmail);
-
-    return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button type="button" variant="outline" disabled={disabled}>
-                    <TestTube2 aria-hidden />
-                    Enviar prueba
-                </Button>
-            </DialogTrigger>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Enviar una prueba</DialogTitle>
-                    <DialogDescription>
-                        Llega solo a este correo, con datos de ejemplo y «[Prueba]» en el asunto. No cuenta en las estadísticas.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-2">
-                    <Label htmlFor="test-email">Correo</Label>
-                    <Input id="test-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                </div>
-                <DialogFooter>
-                    <Button
-                        type="button"
-                        disabled={!email}
-                        onClick={() => {
-                            setOpen(false);
-                            onSend(email);
-                        }}
-                    >
-                        <Send aria-hidden />
-                        Enviar prueba
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
     );
 }
 

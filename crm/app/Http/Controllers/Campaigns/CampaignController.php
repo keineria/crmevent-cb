@@ -55,7 +55,7 @@ class CampaignController extends Controller
 
         return Inertia::render('campaigns/index', [
             'campaigns' => $campaigns,
-            'templates' => MailTemplate::orderBy('name')->get(['id', 'name']),
+            'templates' => MailTemplate::forCampaigns()->orderBy('name')->get(['id', 'name']),
             'canEdit' => $request->user()->hasAnyRole(Roles::CAMPAIGN_EDITORS),
             'senderReady' => $this->senderReady(),
         ]);
@@ -64,7 +64,7 @@ class CampaignController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate(['template_id' => ['nullable', 'integer', 'exists:mail_templates,id']]);
-        $template = isset($data['template_id']) ? MailTemplate::find($data['template_id']) : null;
+        $template = isset($data['template_id']) ? MailTemplate::forCampaigns()->find($data['template_id']) : null;
 
         $campaign = Campaign::create([
             'name' => $template ? "{$template->name} · ".now(self::TIMEZONE)->translatedFormat('j M Y') : 'Nueva campaña',
