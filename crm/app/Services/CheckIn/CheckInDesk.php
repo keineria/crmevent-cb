@@ -24,15 +24,30 @@ class CheckInDesk
     private const MAX_RESULTS = 15;
 
     /**
-     * @param  list<string>  $types  Activity types this desk handles.
+     * One participant row per person (a person who bought twice appears once).
+     *
      * @return array{method: string, participants: Collection<int, RegistrationParticipant>}
      */
-    public function search(string $term, array $types): array
+    public function search(string $term): array
+    {
+        $found = $this->find($term);
+        $found['participants'] = $found['participants']
+            ->unique(fn (RegistrationParticipant $p) => $p->evr_participant_id > 0 ? "evr{$p->evr_participant_id}" : "row{$p->id}")
+            ->take(self::MAX_RESULTS)
+            ->values();
+
+        return $found;
+    }
+
+    /**
+     * @return array{method: string, participants: Collection<int, RegistrationParticipant>}
+     */
+    private function find(string $term): array
     {
         $term = trim($term);
         $query = RegistrationParticipant::query()
             ->whereHas('registration', fn (Builder $r) => $r->whereIn('status', self::VISIBLE_STATUSES))
-            ->with(['registration:id,number,status,billing', 'activities' => fn ($q) => $q->whereIn('type', $types)->with('checkIn.user:id,name')]);
+            ->with('registration:id,number,status,ordered_at');
 
         if ($code = RegistrationParticipant::codeFrom($term)) {
             return ['method' => CheckIn::METHOD_QR, 'participants' => $query->where('checkin_code', $code)->get()];
@@ -58,14 +73,15 @@ class CheckInDesk
                 ->orWhereRaw($this->documentSql().' like ?', ['%'.$document.'%'])
                 ->orWhereHas('registration', fn (Builder $r) => $r->where('number', $term)))
             ->orderBy('full_name')
-            ->limit(self::MAX_RESULTS)
+            ->limit(self::MAX_RESULTS * 2)
             ->get();
 
         return ['method' => CheckIn::METHOD_SEARCH, 'participants' => $participants];
     }
 
     /**
-     * Records the arrival to each given activity. Already checked-in activities are left as they were.
+     * Records the arrival to each given activity of this person (any of their orders).
+     * Already checked-in activities are left as they were.
      *
      * @param  list<int>  $activityIds  registration_activities ids.
      * @param  list<string>  $types  Activity types this desk may check in.
@@ -73,11 +89,9 @@ class CheckInDesk
      */
     public function checkIn(RegistrationParticipant $participant, array $activityIds, array $types, string $method, User $user): array
     {
-        if (! $participant->registration->isPaid()) {
-            throw new CheckInRefused('El pedido #'.$participant->registration->number.' no está pagado.');
-        }
-
-        $activities = $participant->activities()->whereIn('id', $activityIds)->with('checkIn')->get();
+        $rows = ParticipantRecord::rows($participant)->keyBy('id');
+        $activities = RegistrationActivity::whereIn('registration_participant_id', $rows->keys())
+            ->whereIn('id', $activityIds)->with('checkIn')->get();
 
         if ($activities->count() !== count(array_unique($activityIds))) {
             throw new CheckInRefused('Alguna de las actividades no pertenece a esta persona.');
@@ -86,6 +100,10 @@ class CheckInDesk
         $result = ['created' => 0, 'already' => 0];
 
         foreach ($activities as $activity) {
+            $registration = $rows[$activity->registration_participant_id]->registration;
+            if (! $registration->isPaid()) {
+                throw new CheckInRefused("El pedido #{$registration->number} no está pagado.");
+            }
             if (! in_array($activity->type, $types, true)) {
                 throw new CheckInRefused("«{$activity->name}» no se registra en este punto.");
             }
@@ -104,7 +122,7 @@ class CheckInDesk
             try {
                 CheckIn::create([
                     'registration_activity_id' => $activity->id,
-                    'registration_participant_id' => $participant->id,
+                    'registration_participant_id' => $activity->registration_participant_id,
                     'evr_activity_id' => $activity->evr_activity_id,
                     'method' => $method,
                     'user_id' => $user->id,

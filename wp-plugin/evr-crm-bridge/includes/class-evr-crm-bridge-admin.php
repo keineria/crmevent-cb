@@ -14,6 +14,7 @@ final class EVR_CRM_Bridge_Admin {
 
 	const PAGE_SLUG    = 'evr-crm-bridge';
 	const NONCE_ACTION = 'evr_crm_bridge_regenerate';
+	const ACTOR_ACTION = 'evr_crm_bridge_actor';
 
 	/**
 	 * Hook into WordPress admin.
@@ -23,6 +24,7 @@ final class EVR_CRM_Bridge_Admin {
 	public static function init() {
 		add_action( 'admin_menu', array( __CLASS__, 'register_page' ) );
 		add_action( 'admin_post_' . self::NONCE_ACTION, array( __CLASS__, 'handle_regenerate' ) );
+		add_action( 'admin_post_' . self::ACTOR_ACTION, array( __CLASS__, 'handle_actor' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( EVR_CRM_BRIDGE_FILE ), array( __CLASS__, 'action_links' ) );
 	}
 
@@ -72,6 +74,29 @@ final class EVR_CRM_Bridge_Admin {
 	}
 
 	/**
+	 * Handle the "Usuario que firma los cambios" POST.
+	 *
+	 * @return void
+	 */
+	public static function handle_actor() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'No tienes permisos para realizar esta acción.', 'evr-crm-bridge' ), '', array( 'response' => 403 ) );
+		}
+		check_admin_referer( self::ACTOR_ACTION );
+
+		$user_id = isset( $_POST['evr_crm_actor'] ) ? absint( wp_unslash( $_POST['evr_crm_actor'] ) ) : 0;
+		$user    = $user_id ? get_userdata( $user_id ) : false;
+		if ( $user && array_intersect( array( 'administrator', 'editor' ), (array) $user->roles ) ) {
+			update_option( EVR_CRM_Bridge_Writer::ACTOR_OPTION, $user_id, false );
+		} else {
+			delete_option( EVR_CRM_Bridge_Writer::ACTOR_OPTION );
+		}
+
+		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE_SLUG, 'actor' => '1' ), admin_url( 'options-general.php' ) ) );
+		exit;
+	}
+
+	/**
 	 * Render the settings page.
 	 *
 	 * @return void
@@ -96,6 +121,10 @@ final class EVR_CRM_Bridge_Admin {
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Se generó una nueva clave. Actualízala en el CRM: la anterior ya no funciona.', 'evr-crm-bridge' ); ?></p></div>
 			<?php endif; ?>
 
+			<?php if ( isset( $_GET['actor'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Usuario guardado.', 'evr-crm-bridge' ); ?></p></div>
+			<?php endif; ?>
+
 			<?php if ( ! $evr_ok ) : ?>
 				<div class="notice notice-error"><p><?php esc_html_e( 'No se encontraron las tablas de EVR Event Registration. Activa ese plugin para que el CRM pueda leer las inscripciones.', 'evr-crm-bridge' ); ?></p></div>
 			<?php endif; ?>
@@ -104,7 +133,7 @@ final class EVR_CRM_Bridge_Admin {
 				<div class="notice notice-error"><p><?php esc_html_e( 'WooCommerce no está activo. El CRM no podrá leer los pedidos.', 'evr-crm-bridge' ); ?></p></div>
 			<?php endif; ?>
 
-			<p><?php esc_html_e( 'Copia estos datos en el CRM, en Configuración › Plugin de inscripciones. La API es de solo lectura.', 'evr-crm-bridge' ); ?></p>
+			<p><?php esc_html_e( 'Copia estos datos en el CRM, en Configuración › Plugin de inscripciones.', 'evr-crm-bridge' ); ?></p>
 
 			<table class="form-table" role="presentation">
 				<tr>
@@ -128,6 +157,27 @@ final class EVR_CRM_Bridge_Admin {
 				<input type="hidden" name="action" value="<?php echo esc_attr( self::NONCE_ACTION ); ?>" />
 				<?php wp_nonce_field( self::NONCE_ACTION ); ?>
 				<?php submit_button( __( 'Regenerar clave', 'evr-crm-bridge' ), 'secondary', 'submit', false ); ?>
+			</form>
+
+			<h2><?php esc_html_e( 'Cambios desde la mesa de registro del CRM', 'evr-crm-bridge' ); ?></h2>
+			<p><?php esc_html_e( 'El CRM puede editar datos de contacto, cambiar o retirar actividades y crear registros nuevos, con las mismas reglas de cupos de "Inscritos" y "Nuevo Registro". Elige el usuario de WordPress que firma esos cambios; en las notas del pedido queda además el nombre de quien lo hizo en el CRM. Sin usuario, el CRM solo puede leer.', 'evr-crm-bridge' ); ?></p>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="<?php echo esc_attr( self::ACTOR_ACTION ); ?>" />
+				<?php wp_nonce_field( self::ACTOR_ACTION ); ?>
+				<label for="evr-crm-actor" class="screen-reader-text"><?php esc_html_e( 'Usuario que firma los cambios', 'evr-crm-bridge' ); ?></label>
+				<?php
+				wp_dropdown_users(
+					array(
+						'name'              => 'evr_crm_actor',
+						'id'                => 'evr-crm-actor',
+						'role__in'          => array( 'administrator', 'editor' ),
+						'selected'          => EVR_CRM_Bridge_Writer::actor_id(),
+						'show_option_none'  => __( '— Solo lectura —', 'evr-crm-bridge' ),
+						'option_none_value' => 0,
+					)
+				);
+				?>
+				<?php submit_button( __( 'Guardar usuario', 'evr-crm-bridge' ), 'primary', 'submit', false ); ?>
 			</form>
 		</div>
 		<script>

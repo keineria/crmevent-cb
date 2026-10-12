@@ -86,6 +86,20 @@ class RegistrationSync
     }
 
     /**
+     * Mirrors orders the plugin just returned after a change made from the CRM, without waiting for the next sync.
+     *
+     * @param  list<array<string, mixed>>  $orders  Items in the shape of GET /orders.
+     */
+    public function applyOrders(array $orders): void
+    {
+        $result = ['activities' => 0, 'orders' => 0, 'participants' => 0, 'new_contacts' => 0, 'has_more' => false];
+
+        foreach ($orders as $order) {
+            DB::transaction(fn () => $this->upsertOrder($order, $result));
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $a
      */
     private function upsertActivity(array $a): void
@@ -160,6 +174,7 @@ class RegistrationSync
                     'price' => (float) ($a['price'] ?? 0),
                     'discount' => (float) ($a['discount'] ?? 0),
                     'total' => (float) ($a['total'] ?? 0),
+                    'discount_label' => ($a['discount_label'] ?? null) ?: null,
                 ]);
                 if (in_array($a['status'] ?? '', RegistrationActivity::ACTIVE_STATUSES, true)) {
                     $active[] = $a['name'] ?? 'Actividad';

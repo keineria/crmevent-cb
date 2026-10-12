@@ -22,9 +22,9 @@ final class Roles
     /** What each role can do, shown when creating staff accounts. */
     public const HINTS = [
         self::ADMIN => 'Todo, incluida la configuración y los usuarios.',
-        self::REGISTRATION_ADMIN => 'Inscripciones, contactos, check-in de entrada y salidas, y envío de QR.',
-        self::REGISTRATION => 'Check-in en la entrada (conferencias, talleres y otras actividades) e inscripciones.',
-        self::TRIP_REGISTRATION => 'Solo check-in en el punto de encuentro de las salidas.',
+        self::REGISTRATION_ADMIN => 'Inscripciones, contactos, check-in de entrada y salidas, envío de QR, y cambiar, retirar o agregar actividades.',
+        self::REGISTRATION => 'Check-in en la entrada (conferencias, talleres y otras actividades), inscripciones y corregir datos básicos.',
+        self::TRIP_REGISTRATION => 'Check-in en el punto de encuentro de las salidas y corregir datos básicos.',
         self::ANALYST => 'Ver inscripciones, actividades y contactos.',
         self::MARKETING => 'Contactos e importación de Excel.',
     ];
@@ -43,6 +43,12 @@ final class Roles
 
     /** Roles that open the check-in page at all. */
     public const CHECKIN_STAFF = [self::ADMIN, self::REGISTRATION_ADMIN, self::REGISTRATION, self::TRIP_REGISTRATION];
+
+    /** Roles that correct a participant's contact details at the desk (written to the plugin). */
+    public const PARTICIPANT_EDITORS = [self::ADMIN, self::REGISTRATION_ADMIN, self::REGISTRATION, self::TRIP_REGISTRATION];
+
+    /** Roles that change, remove or add a participant's activities (written to the plugin). */
+    public const ACTIVITY_EDITORS = [self::ADMIN, self::REGISTRATION_ADMIN];
 
     /** Roles that send participants their QR and see the check-in totals. */
     public const CHECKIN_MANAGERS = [self::ADMIN, self::REGISTRATION_ADMIN];

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\CheckIn\CheckInDesk;
 use App\Services\CheckIn\CheckinQr;
 use App\Services\CheckIn\CheckInRefused;
+use App\Services\CheckIn\ParticipantRecord;
 use App\Support\Roles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -38,6 +39,7 @@ class CheckInController extends Controller
             'fecha' => ['nullable', 'date_format:Y-m-d'],
             'salida' => ['nullable', 'integer'],
             'q' => ['nullable', 'string', 'max:200'],
+            'persona' => ['nullable', 'integer'],
         ]);
         $mode = $filters['modo'] ?? $modes[0];
         $types = $this->typesFor($mode);
@@ -49,14 +51,27 @@ class CheckInController extends Controller
 
         $trip = $mode === self::MODE_TRIPS ? $dayActivities->firstWhere('evr_id', $filters['salida'] ?? null) : null;
 
-        $results = null;
-        if (filled($filters['q'] ?? null)) {
-            $found = $this->desk->search($filters['q'], $types);
-            $results = [
-                'method' => $found['method'],
-                'participants' => $found['participants']->map(fn (RegistrationParticipant $p) => $this->participantData($p, $date))->values(),
-            ];
+        // A QR, a document with one owner, or a pick from the list opens the person's record straight away.
+        $method = null;
+        $matches = null;
+        $person = isset($filters['persona']) ? RegistrationParticipant::find($filters['persona']) : null;
+        if (! $person && filled($filters['q'] ?? null)) {
+            $found = $this->desk->search($filters['q']);
+            $method = $found['method'];
+            if ($found['participants']->count() === 1) {
+                $person = $found['participants']->first();
+            } else {
+                $matches = $found['participants']->map(fn (RegistrationParticipant $p) => [
+                    'id' => $p->id,
+                    'name' => $p->full_name,
+                    'document' => trim("{$p->document_type} {$p->document_number}") ?: null,
+                    'entity' => $p->entity,
+                    'order' => $p->registration->number,
+                    'paid' => $p->registration->isPaid(),
+                ])->values();
+            }
         }
+        $user = $request->user();
 
         return Inertia::render('checkin/index', [
             'mode' => $mode,
@@ -77,10 +92,21 @@ class CheckInController extends Controller
             'trip' => $trip?->evr_id,
             'roster' => $trip ? $this->roster($trip->evr_id) : null,
             'q' => $filters['q'] ?? '',
-            'results' => $results,
+            'method' => $method ?? (isset($filters['persona']) ? CheckIn::METHOD_SEARCH : null),
+            'matches' => $matches,
+            'record' => $person ? ParticipantRecord::build($person, $types, $date) : null,
+            'can' => [
+                'edit_details' => $user->hasAnyRole(Roles::PARTICIPANT_EDITORS),
+                'edit_activities' => $user->hasAnyRole(Roles::ACTIVITY_EDITORS),
+            ],
+            'options' => [
+                'documents' => ParticipantRecord::DOCUMENT_TYPES,
+                'shirts' => ['S', 'M', 'L', 'XL', 'XXL'],
+                'meals' => ['traditional' => 'Tradicional', 'vegetarian' => 'Vegetariana', 'vegan' => 'Vegana'],
+            ],
             'types' => EventActivity::TYPE_LABELS,
-            'canManage' => $request->user()->hasAnyRole(Roles::CHECKIN_MANAGERS),
-            'qr' => $request->user()->hasAnyRole(Roles::CHECKIN_MANAGERS) ? $this->qrStats() : null,
+            'canManage' => $user->hasAnyRole(Roles::CHECKIN_MANAGERS),
+            'qr' => $user->hasAnyRole(Roles::CHECKIN_MANAGERS) ? $this->qrStats() : null,
         ]);
     }
 
@@ -155,13 +181,18 @@ class CheckInController extends Controller
         $perHour = max(1, (int) config('crm.qr_emails_per_hour'));
         $count = 0;
 
-        $this->pendingQrQuery()->with('registration:id,status,billing')->chunkById(200, function ($participants) use (&$count, $perHour) {
+        $seen = [];
+
+        $this->pendingQrQuery()->with('registration:id,status,billing')->chunkById(200, function ($participants) use (&$count, &$seen, $perHour) {
             foreach ($participants as $participant) {
-                if (! $participant->qrEmail()) {
+                // One email per person: any of their codes opens their whole record at the desk.
+                $person = $participant->evr_participant_id > 0 ? "evr{$participant->evr_participant_id}" : "row{$participant->id}";
+                if (isset($seen[$person]) || ! $participant->qrEmail()) {
                     continue;
                 }
+                $seen[$person] = true;
                 SendCheckinQr::dispatch($participant)->delay(now()->addSeconds(intdiv($count * 3600, $perHour)));
-                $participant->forceFill(['qr_queued_at' => now()])->save();
+                ParticipantRecord::rows($participant)->toQuery()->update(['qr_queued_at' => now()]);
                 $count++;
             }
         });
@@ -241,7 +272,7 @@ class CheckInController extends Controller
                 'whatsapp' => $a->participant->whatsapp,
                 'meal_type' => $a->participant->meal_type,
                 'allergies' => $a->participant->allergies,
-                'check_in' => $this->checkInData($a->checkIn),
+                'check_in' => ParticipantRecord::checkInData($a->checkIn),
             ])
             ->values()
             ->all();
@@ -282,53 +313,5 @@ class CheckInController extends Controller
             'per_hour' => (int) config('crm.qr_emails_per_hour'),
             'sent' => RegistrationParticipant::whereNotNull('qr_sent_at')->count(),
         ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function participantData(RegistrationParticipant $p, string $date): array
-    {
-        return [
-            'id' => $p->id,
-            'name' => $p->full_name,
-            'document' => trim("{$p->document_type} {$p->document_number}") ?: null,
-            'email' => $p->email,
-            'whatsapp' => $p->whatsapp,
-            'entity' => $p->entity,
-            'shirt_size' => $p->shirt_size,
-            'meal_type' => $p->meal_type,
-            'allergies' => $p->allergies,
-            'code' => $p->checkin_code,
-            'qr_sent_at' => $p->qr_sent_at?->toIso8601String(),
-            'order' => [
-                'number' => $p->registration->number,
-                'status' => $p->registration->status,
-                'paid' => $p->registration->isPaid(),
-            ],
-            'activities' => $p->activities->map(fn (RegistrationActivity $a) => [
-                'id' => $a->id,
-                'name' => $a->name,
-                'type' => $a->type,
-                'date' => $a->event_date?->toDateString(),
-                'start_time' => $a->start_time ? substr($a->start_time, 0, 5) : null,
-                'active' => in_array($a->status, RegistrationActivity::ACTIVE_STATUSES, true),
-                'on_date' => $a->event_date?->toDateString() === $date,
-                'check_in' => $this->checkInData($a->checkIn),
-            ])->values(),
-        ];
-    }
-
-    /**
-     * @return array{id: int, at: string, by: string|null, method: string}|null
-     */
-    private function checkInData(?CheckIn $checkIn): ?array
-    {
-        return $checkIn ? [
-            'id' => $checkIn->id,
-            'at' => $checkIn->checked_in_at->toIso8601String(),
-            'by' => $checkIn->user?->name,
-            'method' => $checkIn->method,
-        ] : null;
     }
 }

@@ -17,6 +17,11 @@ return new class extends Migration
             $table->timestamp('qr_sent_at')->nullable()->after('qr_queued_at');
         });
 
+        Schema::table('registration_activities', function (Blueprint $table) {
+            // Name of the plugin's discount rule behind `discount`, shown on the participant's record.
+            $table->string('discount_label')->nullable()->after('total');
+        });
+
         DB::table('registration_participants')->whereNull('checkin_code')->orderBy('id')->select('id')
             ->chunkById(500, function ($rows) {
                 foreach ($rows as $row) {
@@ -39,6 +44,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('check_ins');
+
+        Schema::table('registration_activities', function (Blueprint $table) {
+            $table->dropColumn('discount_label');
+        });
 
         Schema::table('registration_participants', function (Blueprint $table) {
             $table->dropUnique(['checkin_code']);

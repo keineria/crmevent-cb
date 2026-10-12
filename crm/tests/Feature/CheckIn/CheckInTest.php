@@ -81,7 +81,7 @@ class CheckInTest extends TestCase
         $this->assertNull(RegistrationParticipant::codeFrom('1020304'));
     }
 
-    public function test_entrance_desk_finds_by_document_with_dots_and_only_sees_entrance_activities(): void
+    public function test_entrance_desk_opens_the_record_by_document_with_dots(): void
     {
         $this->participant('Ana Pérez', '1.020.304', [['Conferencias', 'conference'], ['Salida Km 18', 'birding', '2027-10-01']]);
         $this->participant('Intento sin pagar', '777888', [['Conferencias', 'conference']], 'failed');
@@ -94,26 +94,58 @@ class CheckInTest extends TestCase
                 ->where('mode', 'entrada')
                 ->where('modes', ['entrada'])
                 ->where('date', self::DAY)
-                ->where('results.method', 'documento')
-                ->has('results.participants', 1)
-                ->where('results.participants.0.name', 'Ana Pérez')
-                ->has('results.participants.0.activities', 1)
-                ->where('results.participants.0.activities.0.name', 'Conferencias')
-                ->where('results.participants.0.activities.0.on_date', true));
+                ->where('method', 'documento')
+                ->where('matches', null)
+                ->where('record.name', 'Ana Pérez')
+                ->where('record.document_label', 'Cédula de ciudadanía')
+                ->where('record.totals.confirmed', 2)
+                ->has('record.orders.0.activities', 2)
+                ->where('record.orders.0.activities.0.here', true)
+                ->where('record.orders.0.activities.0.on_date', true)
+                ->where('record.orders.0.activities.1.here', false)
+                ->where('can', ['edit_details' => true, 'edit_activities' => false]));
 
-        $this->get('/checkin?q=777888')->assertInertia(fn (Assert $page) => $page->has('results.participants', 0));
+        $this->get('/checkin?q=777888')->assertInertia(fn (Assert $page) => $page->has('matches', 0)->where('record', null));
     }
 
-    public function test_qr_code_and_name_search(): void
+    public function test_qr_opens_the_record_and_name_search_lists_matches(): void
     {
         $p = $this->participant('Ana Pérez', '1020304', [['Conferencias', 'conference']]);
+        $this->participant('Luis Pérez', '333444', [['Conferencias', 'conference']]);
         $this->actingAs($this->staff(Roles::REGISTRATION));
 
         $this->get('/checkin?q='.urlencode($p->checkin_code))
-            ->assertInertia(fn (Assert $page) => $page->where('results.method', 'qr')->where('results.participants.0.id', $p->id));
+            ->assertInertia(fn (Assert $page) => $page->where('method', 'qr')->where('record.id', $p->id));
 
         $this->get('/checkin?q=p%C3%A9rez')
-            ->assertInertia(fn (Assert $page) => $page->where('results.method', 'busqueda')->where('results.participants.0.id', $p->id));
+            ->assertInertia(fn (Assert $page) => $page->where('method', 'busqueda')->has('matches', 2)->where('record', null));
+
+        $this->get("/checkin?persona={$p->id}")
+            ->assertInertia(fn (Assert $page) => $page->where('record.name', 'Ana Pérez'));
+    }
+
+    public function test_a_person_with_two_orders_has_one_record_with_totals_and_discounts(): void
+    {
+        $first = $this->participant('Carlos Martínez', '79765313', [['Salida Chicoral', 'birding', '2027-10-03']]);
+        $second = $this->participant('Carlos Martínez', '79765313', [['Conferencias', 'conference']]);
+        $second->forceFill(['evr_participant_id' => $first->evr_participant_id])->save();
+        RegistrationActivity::where('registration_participant_id', $first->id)->update(['price' => 180000, 'total' => 180000]);
+        RegistrationActivity::where('registration_participant_id', $second->id)
+            ->update(['price' => 350000, 'discount' => 300000, 'total' => 50000, 'discount_label' => 'PROMO: 3 Pajareadas y conferencias']);
+
+        $this->actingAs($this->staff(Roles::REGISTRATION))
+            ->get('/checkin?q=79765313')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('matches', null)
+                ->has('record.orders', 2)
+                ->where('record.totals', ['price' => 530000, 'discount' => 300000, 'total' => 230000, 'confirmed' => 2])
+                ->where('record.discounts', [['label' => 'PROMO: 3 Pajareadas y conferencias', 'amount' => 300000]]));
+
+        // Checking in from the record works across both orders.
+        $conference = $second->activities()->first();
+        $this->from('/checkin')->post('/checkin', ['modo' => 'entrada', 'participant' => $first->id, 'activities' => [$conference->id], 'method' => 'documento'])
+            ->assertSessionHas('success');
+        $this->assertSame($second->id, CheckIn::sole()->registration_participant_id);
     }
 
     public function test_check_in_records_arrival_once(): void

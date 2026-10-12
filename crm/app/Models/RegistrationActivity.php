@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'registration_participant_id', 'evr_assignment_id', 'evr_activity_id', 'name', 'type', 'event_date', 'start_time',
-    'status', 'price', 'discount', 'total',
+    'status', 'price', 'discount', 'total', 'discount_label',
 ])]
 class RegistrationActivity extends Model
 {

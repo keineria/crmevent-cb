@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Mail\CheckinQrMail;
 use App\Models\MailSetting;
 use App\Models\RegistrationParticipant;
+use App\Services\CheckIn\ParticipantRecord;
 use App\Services\Mail\CrmMailer;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -34,6 +35,6 @@ class SendCheckinQr implements ShouldQueue
             ->to($email, $this->participant->full_name)
             ->send(new CheckinQrMail($this->participant));
 
-        $this->participant->forceFill(['qr_sent_at' => now()])->save();
+        ParticipantRecord::rows($this->participant)->toQuery()->update(['qr_sent_at' => now()]);
     }
 }

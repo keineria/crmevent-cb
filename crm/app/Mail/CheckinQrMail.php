@@ -2,8 +2,10 @@
 
 namespace App\Mail;
 
+use App\Models\RegistrationActivity;
 use App\Models\RegistrationParticipant;
 use App\Services\CheckIn\CheckinQr;
+use App\Services\CheckIn\ParticipantRecord;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
@@ -20,7 +22,15 @@ class CheckinQrMail extends Mailable
 
     public function content(): Content
     {
-        $participant = $this->participant->loadMissing('activities');
+        $participant = $this->participant;
+
+        // Every activity of the person in paid orders, not only the ones bought with this code.
+        $activities = ParticipantRecord::rows($participant)
+            ->filter(fn (RegistrationParticipant $p) => $p->registration->isPaid())
+            ->flatMap(fn (RegistrationParticipant $p) => $p->activities)
+            ->filter(fn (RegistrationActivity $a) => in_array($a->status, RegistrationActivity::ACTIVE_STATUSES, true))
+            ->sortBy(fn (RegistrationActivity $a) => $a->event_date?->toDateString().' '.$a->start_time)
+            ->values();
 
         return new Content(
             markdown: 'mail.checkin-qr',
@@ -28,7 +38,7 @@ class CheckinQrMail extends Mailable
                 'name' => $participant->full_name,
                 'code' => $participant->checkin_code,
                 'png' => app(CheckinQr::class)->png($participant, 8),
-                'activities' => $participant->activities->whereIn('status', ['reserved', 'confirmed'])->values(),
+                'activities' => $activities,
             ],
         );
     }

@@ -1,26 +1,18 @@
+import ParticipantRecordView, { dueToday } from '@/components/checkin/participant-record';
+import { type CheckInInfo, type Mode, type Options, type ParticipantRecord, type Permissions } from '@/components/checkin/types';
 import Heading from '@/components/heading';
 import QrScanDialog from '@/components/qr-scan-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
 import { day, number } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage } from '@inertiajs/react';
-import { CircleCheck, CircleX, LoaderCircle, Mail, QrCode, ScanLine, Search, Undo2 } from 'lucide-react';
+import { CircleCheck, CircleX, Mail, ScanLine, Search, Undo2 } from 'lucide-react';
 import { FormEventHandler, useCallback, useEffect, useRef, useState } from 'react';
-
-type Mode = 'entrada' | 'salidas';
-
-interface CheckInInfo {
-    id: number;
-    at: string;
-    by: string | null;
-    method: string;
-}
 
 interface DayActivity {
     id: number;
@@ -30,31 +22,6 @@ interface DayActivity {
     start_time: string | null;
     expected: number;
     checked_in: number;
-}
-
-interface Participant {
-    id: number;
-    name: string;
-    document: string | null;
-    email: string | null;
-    whatsapp: string | null;
-    entity: string | null;
-    shirt_size: string | null;
-    meal_type: string | null;
-    allergies: string | null;
-    code: string;
-    qr_sent_at: string | null;
-    order: { number: string; status: string; paid: boolean };
-    activities: {
-        id: number;
-        name: string | null;
-        type: string | null;
-        date: string | null;
-        start_time: string | null;
-        active: boolean;
-        on_date: boolean;
-        check_in: CheckInInfo | null;
-    }[];
 }
 
 interface RosterRow {
@@ -78,7 +45,11 @@ interface PageProps {
     trip: number | null;
     roster: RosterRow[] | null;
     q: string;
-    results: { method: string; participants: Participant[] } | null;
+    method: string | null;
+    matches: { id: number; name: string; document: string | null; entity: string | null; order: string; paid: boolean }[] | null;
+    record: ParticipantRecord | null;
+    can: Permissions;
+    options: Options;
     types: Record<string, string>;
     canManage: boolean;
     qr: { pending: number; queued: number; sent: number; per_hour: number } | null;
@@ -87,7 +58,6 @@ interface PageProps {
 }
 
 const MODE_LABELS: Record<Mode, string> = { entrada: 'Entrada', salidas: 'Salidas' };
-const MEALS: Record<string, string> = { traditional: 'Tradicional', vegetarian: 'Vegetariana', vegan: 'Vegana' };
 const time = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
 const selectClass =
     'border-input bg-background focus-visible:ring-ring flex h-10 rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden';
@@ -98,7 +68,8 @@ function arrival(c: CheckInInfo) {
 
 export default function CheckInPage() {
     const page = usePage<PageProps>();
-    const { mode, modes, date, today, dates, activities, trip, roster, q, results, types, canManage, qr, flash } = page.props;
+    const { mode, modes, date, today, dates, activities, trip, roster, q, method, matches, record, can, options, types, canManage, qr, flash } =
+        page.props;
     const [term, setTerm] = useState(q);
     const [scanning, setScanning] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -149,17 +120,16 @@ export default function CheckInPage() {
         if (confirm('¿Deshacer este ingreso?')) router.delete(`/checkin/${c.id}`, { preserveScroll: true, preserveState: true });
     };
 
-    // A scanned QR with one paid match and something due today is registered straight away, so the line keeps moving.
+    // A scanned QR opens the record and registers what is due today straight away, so the line keeps moving.
     useEffect(() => {
-        if (!results || results.method !== 'qr' || results.participants.length !== 1) return;
-        const p = results.participants[0];
-        const due = p.activities.filter((a) => a.active && a.on_date && !a.check_in).map((a) => a.id);
-        const key = `${q}:${p.id}`;
-        if (!p.order.paid || due.length === 0 || autoDone.current === key) return;
+        if (!record || method !== 'qr') return;
+        const due = dueToday(record);
+        const key = `${q}:${record.id}`;
+        if (due.length === 0 || autoDone.current === key) return;
         autoDone.current = key;
-        checkIn(p.id, due, 'qr');
+        checkIn(record.id, due, 'qr');
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [results, q]);
+    }, [record, method, q]);
 
     const onScan = useCallback(
         (text: string) => {
@@ -262,26 +232,51 @@ export default function CheckInPage() {
                 </form>
                 <QrScanDialog open={scanning} onOpenChange={setScanning} onScan={onScan} />
 
-                {results && (
-                    <section aria-label="Resultados" className="space-y-3">
-                        {results.participants.length === 0 && (
+                {matches && (
+                    <section aria-label="Coincidencias" className="space-y-2">
+                        {matches.length === 0 ? (
                             <div className="text-muted-foreground rounded-xl border border-dashed p-8 text-center text-sm">
                                 No encontramos a nadie con «{q}» entre los pedidos pagados o pendientes. Prueba con otro dato o pide el número de
                                 pedido.
                             </div>
+                        ) : (
+                            <>
+                                <p className="text-muted-foreground text-sm">{matches.length} personas coinciden. Elige una:</p>
+                                <ul className="divide-y rounded-xl border">
+                                    {matches.map((m) => (
+                                        <li key={m.id}>
+                                            <button
+                                                className="hover:bg-muted/50 flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left"
+                                                onClick={() => visit({ persona: m.id, q: undefined })}
+                                            >
+                                                <span>
+                                                    <span className="block font-medium">{m.name}</span>
+                                                    <span className="text-muted-foreground text-xs">
+                                                        {[m.document, m.entity, `Pedido #${m.order}`].filter(Boolean).join(' · ')}
+                                                    </span>
+                                                </span>
+                                                {!m.paid && <Badge variant="destructive">Sin pagar</Badge>}
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </>
                         )}
-                        {results.participants.map((p) => (
-                            <ParticipantCard
-                                key={p.id}
-                                p={p}
-                                method={results.method}
-                                busy={busy}
-                                canManage={canManage}
-                                onCheckIn={checkIn}
-                                onUndo={undo}
-                            />
-                        ))}
                     </section>
+                )}
+
+                {record && (
+                    <ParticipantRecordView
+                        key={record.id}
+                        record={record}
+                        method={method ?? 'busqueda'}
+                        busy={busy}
+                        can={can}
+                        canManage={canManage}
+                        options={options}
+                        onCheckIn={checkIn}
+                        onUndo={undo}
+                    />
                 )}
 
                 {mode === 'salidas' ? (
@@ -307,7 +302,13 @@ export default function CheckInPage() {
                             ))}
                         </div>
                         {roster && (
-                            <Roster rows={roster} busy={busy} onCheckIn={(r) => checkIn(r.participant, [r.activity], 'lista')} onUndo={undo} />
+                            <Roster
+                                rows={roster}
+                                meals={options.meals}
+                                busy={busy}
+                                onCheckIn={(r) => checkIn(r.participant, [r.activity], 'lista')}
+                                onUndo={undo}
+                            />
                         )}
                     </section>
                 ) : (
@@ -367,128 +368,15 @@ export default function CheckInPage() {
     );
 }
 
-function ParticipantCard({
-    p,
-    method,
-    busy,
-    canManage,
-    onCheckIn,
-    onUndo,
-}: {
-    p: Participant;
-    method: string;
-    busy: boolean;
-    canManage: boolean;
-    onCheckIn: (participant: number, ids: number[], method: string) => void;
-    onUndo: (c: CheckInInfo) => void;
-}) {
-    const due = p.activities.filter((a) => a.active && !a.check_in);
-    const [selected, setSelected] = useState<number[]>(() => due.filter((a) => a.on_date).map((a) => a.id));
-    const allIn = p.activities.some((a) => a.check_in) && due.filter((a) => a.on_date).length === 0;
-
-    useEffect(() => {
-        setSelected(p.activities.filter((a) => a.active && !a.check_in && a.on_date).map((a) => a.id));
-    }, [p]);
-
-    return (
-        <article className={cn('space-y-3 rounded-xl border p-4', allIn && 'border-success/50', !p.order.paid && 'border-destructive/50')}>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                    <h3 className="text-lg font-semibold">{p.name}</h3>
-                    <p className="text-muted-foreground text-sm">{[p.document, p.entity, `Pedido #${p.order.number}`].filter(Boolean).join(' · ')}</p>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                    {!p.order.paid && <Badge variant="destructive">Pedido sin pagar</Badge>}
-                    {allIn && <Badge className="bg-success text-white">Ya ingresó</Badge>}
-                </div>
-            </div>
-
-            {(p.meal_type || p.allergies || p.shirt_size) && (
-                <p className="text-sm">
-                    {p.meal_type && <>Alimentación: {MEALS[p.meal_type] ?? p.meal_type}. </>}
-                    {p.shirt_size && <>Camisa: {p.shirt_size}. </>}
-                    {p.allergies && <strong className="text-warning">Alergias: {p.allergies}</strong>}
-                </p>
-            )}
-
-            {p.activities.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No tiene actividades que se registren en este punto.</p>
-            ) : (
-                <ul className="divide-y rounded-lg border">
-                    {p.activities.map((a) => (
-                        <li key={a.id} className={cn('flex items-center gap-3 px-3 py-2 text-sm', !a.active && 'text-muted-foreground line-through')}>
-                            {a.active && !a.check_in && p.order.paid ? (
-                                <Checkbox
-                                    aria-label={`Registrar ${a.name}`}
-                                    checked={selected.includes(a.id)}
-                                    onCheckedChange={(v) => setSelected((s) => (v === true ? [...s, a.id] : s.filter((id) => id !== a.id)))}
-                                />
-                            ) : (
-                                <span className="w-4" aria-hidden>
-                                    {a.check_in && <CircleCheck className="text-success h-4 w-4" />}
-                                </span>
-                            )}
-                            <span className="min-w-0 flex-1">
-                                <span className="font-medium">{a.name}</span>
-                                <span className="text-muted-foreground block text-xs">
-                                    {day(a.date)}
-                                    {a.start_time ? ` · ${a.start_time}` : ''}
-                                    {!a.on_date && a.active && !a.check_in ? ' · otro día' : ''}
-                                </span>
-                            </span>
-                            {a.check_in && (
-                                <span className="text-success flex items-center gap-2 text-xs">
-                                    {arrival(a.check_in)}
-                                    <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7"
-                                        aria-label="Deshacer ingreso"
-                                        onClick={() => onUndo(a.check_in!)}
-                                    >
-                                        <Undo2 aria-hidden />
-                                    </Button>
-                                </span>
-                            )}
-                        </li>
-                    ))}
-                </ul>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-                {p.order.paid && due.length > 0 && (
-                    <Button size="lg" disabled={busy || selected.length === 0} onClick={() => onCheckIn(p.id, selected, method)}>
-                        {busy ? <LoaderCircle className="animate-spin" aria-hidden /> : <CircleCheck aria-hidden />}
-                        Registrar ingreso{selected.length > 1 ? ` (${selected.length})` : ''}
-                    </Button>
-                )}
-                <Button variant="ghost" asChild>
-                    <a href={`/checkin/qr/${p.id}`} target="_blank" rel="noreferrer">
-                        <QrCode aria-hidden />
-                        Ver QR
-                    </a>
-                </Button>
-                {canManage && p.order.paid && (
-                    <Button
-                        variant="ghost"
-                        onClick={() => router.post(`/checkin/qr/${p.id}/send`, {}, { preserveScroll: true, preserveState: true })}
-                    >
-                        <Mail aria-hidden />
-                        {p.qr_sent_at ? 'Reenviar QR' : 'Enviar QR'}
-                    </Button>
-                )}
-            </div>
-        </article>
-    );
-}
-
 function Roster({
     rows,
+    meals,
     busy,
     onCheckIn,
     onUndo,
 }: {
     rows: RosterRow[];
+    meals: Record<string, string>;
     busy: boolean;
     onCheckIn: (r: RosterRow) => void;
     onUndo: (c: CheckInInfo) => void;
@@ -507,7 +395,7 @@ function Roster({
                         <div className="min-w-0 flex-1">
                             <p className="font-medium">{r.name}</p>
                             <p className="text-muted-foreground text-xs">
-                                {[r.document, r.whatsapp, r.meal_type ? (MEALS[r.meal_type] ?? r.meal_type) : null].filter(Boolean).join(' · ')}
+                                {[r.document, r.whatsapp, r.meal_type ? (meals[r.meal_type] ?? r.meal_type) : null].filter(Boolean).join(' · ')}
                             </p>
                             {r.allergies && <p className="text-warning text-xs font-medium">Alergias: {r.allergies}</p>}
                         </div>
