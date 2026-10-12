@@ -21,3 +21,6 @@ Schedule::command('campaigns:send')->everyMinute()->withoutOverlapping();
 
 // Preferred products (from purchases) and stars (from campaign opens and clicks) of every contact.
 Schedule::command('contacts:refresh-insights')->hourly()->withoutOverlapping();
+
+// Satisfaction survey of each activity once it ends (Encuestas), to the people checked in, paced like the certificates.
+Schedule::command('surveys:send')->everyFiveMinutes()->withoutOverlapping();

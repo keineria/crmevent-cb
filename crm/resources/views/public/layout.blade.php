@@ -21,6 +21,7 @@
         button:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
         a { color: var(--primary); }
     </style>
+    @stack('head')
 </head>
 <body>
     <main>

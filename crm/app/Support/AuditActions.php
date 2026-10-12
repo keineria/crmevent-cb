@@ -9,11 +9,14 @@ use App\Models\CertificateRecipient;
 use App\Models\CertificateSigner;
 use App\Models\Contact;
 use App\Models\ContactImport;
+use App\Models\EventActivity;
 use App\Models\Expense;
 use App\Models\MailSetting;
 use App\Models\MailTemplate;
 use App\Models\PluginConnection;
 use App\Models\RegistrationParticipant;
+use App\Models\Survey;
+use App\Models\SurveyForm;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 
@@ -30,6 +33,7 @@ final class AuditActions
         'participant' => 'Participantes',
         'campaign' => 'Campañas',
         'certificates' => 'Certificados',
+        'surveys' => 'Encuestas',
         'contacts' => 'Contactos',
         'finance' => 'Finanzas',
         'reports' => 'Reportes',
@@ -96,6 +100,15 @@ final class AuditActions
         'certificate.downloaded' => ['certificates', 'Descargó el certificado de una persona'],
         'certificate.mail_updated' => ['certificates', 'Editó el correo del certificado'],
 
+        'survey.form_updated' => ['surveys', 'Editó las preguntas de una encuesta'],
+        'survey.enabled' => ['surveys', 'Activó la encuesta automática'],
+        'survey.disabled' => ['surveys', 'Apagó la encuesta automática'],
+        'survey.sent' => ['surveys', 'Envió la encuesta de una actividad'],
+        'survey.resent' => ['surveys', 'Reenvió la encuesta a una persona'],
+        'survey.exported' => ['surveys', 'Descargó las respuestas de una encuesta'],
+        'survey.tested' => ['surveys', 'Envió una prueba del correo de la encuesta'],
+        'survey.mail_updated' => ['surveys', 'Editó el correo de la encuesta'],
+
         'contacts.uploaded' => ['contacts', 'Subió un Excel de contactos'],
         'contacts.imported' => ['contacts', 'Importó contactos'],
         'contacts.template' => ['contacts', 'Descargó la plantilla de contactos'],
@@ -144,6 +157,8 @@ final class AuditActions
             $subject instanceof Campaign, $subject instanceof MailTemplate => (string) $subject->name,
             $subject instanceof CertificateCategory => (string) $subject->name,
             $subject instanceof CertificateSigner => trim("{$subject->name} · {$subject->role}", ' ·'),
+            $subject instanceof SurveyForm => 'Encuesta de '.mb_strtolower(EventActivity::TYPE_LABELS[$subject->activity_type] ?? $subject->activity_type),
+            $subject instanceof Survey => "Encuesta · {$subject->activity_name}",
             $subject instanceof Certificate => "{$subject->activity_name} · ".($subject->category?->name ?? ''),
             $subject instanceof CertificateRecipient => trim("{$subject->full_name} · {$subject->code}", ' ·'),
             $subject instanceof Expense => (string) $subject->concept,

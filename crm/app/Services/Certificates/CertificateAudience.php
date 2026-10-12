@@ -23,14 +23,24 @@ class CertificateAudience
      */
     public function people(Certificate $certificate): Collection
     {
+        return $this->forActivity($certificate->evr_activity_id, $certificate->require_check_in);
+    }
+
+    /**
+     * Everyone with a paid seat in a plugin activity, marking who qualifies. Surveys use it too.
+     *
+     * @return Collection<int, array{person_key: string, participant: RegistrationParticipant, checked_in: bool, checked_in_at: string|null, eligible: bool, email: string|null}>
+     */
+    public function forActivity(int $evrActivityId, bool $requireCheckIn): Collection
+    {
         return RegistrationActivity::query()
-            ->where('evr_activity_id', $certificate->evr_activity_id)
+            ->where('evr_activity_id', $evrActivityId)
             ->whereIn('status', RegistrationActivity::ACTIVE_STATUSES)
             ->whereHas('participant.registration', fn (Builder $r) => $r->whereIn('status', Registration::PAID_STATUSES))
             ->with(['participant.registration:id,status,billing', 'checkIn:id,registration_activity_id,checked_in_at'])
             ->get()
             ->groupBy(fn (RegistrationActivity $a) => self::personKey($a->participant))
-            ->map(function (Collection $seats, string $key) use ($certificate) {
+            ->map(function (Collection $seats, string $key) use ($requireCheckIn) {
                 // The newest row carries the most recent name and email the plugin has for the person.
                 $participant = $seats->map->participant->sortByDesc('id')->first();
                 $checkIn = $seats->map->checkIn->filter()->sortBy('checked_in_at')->first();
@@ -40,7 +50,7 @@ class CertificateAudience
                     'participant' => $participant,
                     'checked_in' => $checkIn !== null,
                     'checked_in_at' => $checkIn?->checked_in_at->toIso8601String(),
-                    'eligible' => $checkIn !== null || ! $certificate->require_check_in,
+                    'eligible' => $checkIn !== null || ! $requireCheckIn,
                     'email' => $participant->qrEmail(),
                 ];
             })

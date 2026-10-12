@@ -22,6 +22,12 @@ return [
     'certificate_emails_per_hour' => (int) env('CRM_CERTIFICATE_EMAILS_PER_HOUR', 90),
 
     /*
+     * Satisfaction survey emails per hour, sent when each activity ends. Same transactional mailbox as the QR and
+     * certificate emails.
+     */
+    'survey_emails_per_hour' => (int) env('CRM_SURVEY_EMAILS_PER_HOUR', 90),
+
+    /*
      * Campaign emails per hour when Correo de envíos › Difusión has no hourly limit set.
      */
     'campaign_emails_per_hour' => (int) env('CRM_CAMPAIGN_EMAILS_PER_HOUR', 90),

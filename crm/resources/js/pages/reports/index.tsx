@@ -4,6 +4,7 @@ import FilterBar from '@/components/reports/filter-bar';
 import TimelineChart from '@/components/reports/timeline-chart';
 import { reportQuery, upperFirst, type ReportFilters } from '@/components/reports/types';
 import Stat from '@/components/stat';
+import { nps, percent, satisfaction, type SurveyTotals } from '@/components/surveys/types';
 import AppLayout from '@/layouts/app-layout';
 import { dateTime, day, number } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
@@ -39,6 +40,7 @@ interface PageProps {
     categories: Category[];
     summary: { participants: number; orders: number; activated: number; returning: number; countries: number; trips: number };
     timeline: { date: string; participants: number }[];
+    surveys: SurveyTotals & { surveys: number };
     today: string;
     lastSync: string | null;
     [key: string]: unknown;
@@ -47,7 +49,7 @@ interface PageProps {
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Reportes', href: '/reports' }];
 
 export default function Reports() {
-    const { filters, editions, categories, summary, timeline, today, lastSync } = usePage<PageProps>().props;
+    const { filters, editions, categories, summary, timeline, surveys, today, lastSync } = usePage<PageProps>().props;
     const pct = (n: number, of = summary.participants) => (of ? `${Math.round((n / of) * 100)}%` : '—');
 
     return (
@@ -85,6 +87,36 @@ export default function Reports() {
                             <CategoryBody category={c} pct={pct} />
                         </CategoryCard>
                     ))}
+                    <section className="flex flex-col rounded-xl border" aria-labelledby="cat-encuestas">
+                        <Link
+                            href={`/reports/encuestas?anio=${filters.anio}`}
+                            className="hover:bg-muted/40 flex items-center justify-between gap-4 rounded-t-xl px-4 py-3"
+                        >
+                            <h2 id="cat-encuestas" className="text-base font-semibold">
+                                Encuestas de satisfacción
+                            </h2>
+                            <span className="text-muted-foreground flex items-center gap-1 text-sm">
+                                Ver todo
+                                <ChevronRight className="size-4" aria-hidden />
+                            </span>
+                        </Link>
+                        <div className="flex-1 border-t p-4">
+                            {surveys.surveys === 0 ? (
+                                <p className="text-muted-foreground text-sm">
+                                    Aún no hay encuestas de esta feria. Salen solas cuando termina cada actividad.
+                                </p>
+                            ) : (
+                                <dl className="grid grid-cols-3 gap-3">
+                                    <Figure label="Satisfacción" value={satisfaction(surveys.satisfaction)} />
+                                    <Figure label="NPS" value={nps(surveys.nps)} />
+                                    <Figure
+                                        label={`Respuestas de ${number.format(surveys.sent)}`}
+                                        value={`${number.format(surveys.responded)} · ${percent(surveys.rate)}`}
+                                    />
+                                </dl>
+                            )}
+                        </div>
+                    </section>
                 </div>
 
                 <section className="space-y-3 rounded-xl border p-4" aria-labelledby="timeline-heading">
