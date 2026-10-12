@@ -120,6 +120,25 @@ chown "$SITEUSER": "${SITE}/public_html/.well-known"
 ln -sfn "${SITE}/public_html/.well-known" "${CRM}/public/.well-known"
 systemctl restart lsws
 
+# A Let's Encrypt *staging* certificate (what CyberPanel leaves after failed attempts) is not trusted by browsers.
+# Replace a missing or staging certificate with a real one, in the files the CyberPanel vhost already points to.
+CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
+ACME="/root/.acme.sh/acme.sh"
+ISSUER="$(openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -issuer 2>/dev/null || true)"
+if [[ -x "$ACME" ]] && { [[ -z "$ISSUER" ]] || grep -qi staging <<<"$ISSUER"; }; then
+    say "Emitiendo el certificado SSL de Let's Encrypt"
+    mkdir -p "$CERT_DIR"
+    if "$ACME" --issue -d "$DOMAIN" --webroot "${SITE}/public_html" --server letsencrypt --force \
+        && "$ACME" --install-cert -d "$DOMAIN" --cert-file "${CERT_DIR}/cert.pem" --key-file "${CERT_DIR}/privkey.pem" \
+            --fullchain-file "${CERT_DIR}/fullchain.pem"; then
+        systemctl restart lsws
+    else
+        echo "No se pudo emitir el certificado. Revisa que el puerto 80 esté abierto y que Cloudflare esté pausado o en gris."
+    fi
+fi
+echo "Certificado SSL: $(openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -issuer -enddate 2>/dev/null | tr '\n' ' ' || echo 'no encontrado')"
+grep -E "^\s*(keyFile|certFile)" "$VHOST" || echo "El vhost no tiene bloque SSL todavía."
+
 say "Configurando la cola (Supervisor) y las tareas programadas (cron)"
 cat > /etc/supervisord.d/crm-worker.ini <<INI
 [program:crm-worker]
