@@ -22,11 +22,11 @@ final class Roles
     /** What each role can do, shown when creating staff accounts. */
     public const HINTS = [
         self::ADMIN => 'Todo, incluida la configuración y los usuarios.',
-        self::REGISTRATION_ADMIN => 'Inscripciones, contactos, check-in de entrada y salidas, envío de QR, certificados, encuestas, y cambiar, retirar o agregar actividades.',
+        self::REGISTRATION_ADMIN => 'Inscripciones, contactos, check-in de entrada y salidas, envío de QR, certificados, encuestas, stand comercial, y cambiar, retirar o agregar actividades.',
         self::REGISTRATION => 'Check-in en la entrada (conferencias, talleres y otras actividades), inscripciones y corregir datos básicos.',
         self::TRIP_REGISTRATION => 'Check-in en el punto de encuentro de las salidas y corregir datos básicos.',
-        self::ANALYST => 'Ver inscripciones, actividades, contactos, reportes, resultados de encuestas y finanzas.',
-        self::MARKETING => 'Contactos, importación de Excel, plantillas, campañas de correo, certificados y encuestas.',
+        self::ANALYST => 'Ver inscripciones, actividades, contactos, reportes, resultados de encuestas, finanzas y stand comercial.',
+        self::MARKETING => 'Contactos, importación de Excel, plantillas, campañas de correo, certificados, encuestas y stand comercial.',
     ];
 
     /** Roles that can see the contact list. */
@@ -82,6 +82,12 @@ final class Roles
 
     /** Roles that add contacts one by one and edit them (preferred product, profile, Activo / Desinscrito). */
     public const CONTACT_EDITORS = [self::ADMIN, self::REGISTRATION_ADMIN, self::MARKETING];
+
+    /** Roles that open the Stand comercial books. */
+    public const STAND_VIEWERS = [self::ADMIN, self::REGISTRATION_ADMIN, self::ANALYST, self::MARKETING];
+
+    /** Roles that upload Stand comercial books and edit their cells. */
+    public const STAND_EDITORS = [self::ADMIN, self::REGISTRATION_ADMIN, self::MARKETING];
 
     /** Roles that can import spreadsheets of contacts. */
     public const CONTACT_IMPORTERS = [self::ADMIN, self::MARKETING];

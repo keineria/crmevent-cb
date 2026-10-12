@@ -15,6 +15,7 @@ use App\Models\MailSetting;
 use App\Models\MailTemplate;
 use App\Models\PluginConnection;
 use App\Models\RegistrationParticipant;
+use App\Models\StandWorkbook;
 use App\Models\Survey;
 use App\Models\SurveyForm;
 use App\Models\User;
@@ -37,6 +38,7 @@ final class AuditActions
         'contacts' => 'Contactos',
         'finance' => 'Finanzas',
         'reports' => 'Reportes',
+        'stands' => 'Stand comercial',
         'settings' => 'Configuración',
     ];
 
@@ -121,6 +123,12 @@ final class AuditActions
 
         'report.exported' => ['reports', 'Descargó un CSV de reportes'],
 
+        'stands.uploaded' => ['stands', 'Subió un Excel del stand comercial'],
+        'stands.replaced' => ['stands', 'Reemplazó un Excel del stand comercial'],
+        'stands.cell_updated' => ['stands', 'Editó una celda del stand comercial'],
+        'stands.downloaded' => ['stands', 'Descargó un Excel del stand comercial'],
+        'stands.deleted' => ['stands', 'Borró un Excel del stand comercial'],
+
         'audit.exported' => ['settings', 'Descargó la auditoría'],
         'mail_setting.updated' => ['settings', 'Cambió el correo de envíos'],
         'mail_setting.test_failed' => ['settings', 'Falló la prueba del correo de envíos'],
@@ -166,6 +174,7 @@ final class AuditActions
             $subject instanceof Contact => trim($subject->fullName().' · '.($subject->email ?? $subject->document_number ?? ''), ' ·') ?: "Contacto #{$subject->id}",
             $subject instanceof MailSetting => "Perfil {$subject->profile}",
             $subject instanceof PluginConnection => 'Plugin de inscripciones',
+            $subject instanceof StandWorkbook => (string) $subject->name,
             default => class_basename($subject)." #{$subject->getKey()}",
         };
     }

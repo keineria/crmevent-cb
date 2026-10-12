@@ -3,11 +3,11 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { Award, CalendarDays, ChartColumn, LayoutGrid, Mail, MessageSquareHeart, PiggyBank, ScanLine, Ticket, Users } from 'lucide-react';
+import { Award, CalendarDays, ChartColumn, LayoutGrid, Mail, MessageSquareHeart, PiggyBank, ScanLine, Store, Ticket, Users } from 'lucide-react';
 import AppLogo from './app-logo';
 
 // Keep in sync with Roles::CONTACT_VIEWERS, Roles::REGISTRATION_VIEWERS, Roles::CHECKIN_STAFF, Roles::CAMPAIGN_VIEWERS,
-// Roles::REPORT_VIEWERS, Roles::FINANCE_VIEWERS, Roles::CERTIFICATE_MANAGERS, Roles::SURVEY_MANAGERS and Roles::SURVEY_VIEWERS.
+// Roles::REPORT_VIEWERS, Roles::FINANCE_VIEWERS, Roles::CERTIFICATE_MANAGERS, Roles::SURVEY_MANAGERS, Roles::SURVEY_VIEWERS and Roles::STAND_VIEWERS.
 const CONTACT_VIEWERS = ['Admin', 'Admin registro', 'Analista', 'Marketing'];
 const REGISTRATION_VIEWERS = ['Admin', 'Admin registro', 'Registro', 'Analista'];
 const CHECKIN_STAFF = ['Admin', 'Admin registro', 'Registro', 'Registro salidas'];
@@ -17,6 +17,7 @@ const FINANCE_VIEWERS = ['Admin', 'Analista'];
 const CERTIFICATE_MANAGERS = ['Admin', 'Admin registro', 'Marketing'];
 const SURVEY_MANAGERS = ['Admin', 'Admin registro', 'Marketing'];
 const SURVEY_VIEWERS = ['Admin', 'Admin registro', 'Analista', 'Marketing'];
+const STAND_VIEWERS = ['Admin', 'Admin registro', 'Analista', 'Marketing'];
 
 export function AppSidebar() {
     const { auth } = usePage<SharedData>().props;
@@ -44,6 +45,7 @@ export function AppSidebar() {
             : []),
         ...(auth.roles.some((r) => REPORT_VIEWERS.includes(r)) ? [{ title: 'Reportes', url: '/reports', icon: ChartColumn }] : []),
         ...(auth.roles.some((r) => FINANCE_VIEWERS.includes(r)) ? [{ title: 'Finanzas', url: '/finance', icon: PiggyBank }] : []),
+        ...(auth.roles.some((r) => STAND_VIEWERS.includes(r)) ? [{ title: 'Stand comercial', url: '/stands', icon: Store }] : []),
     ];
 
     return (

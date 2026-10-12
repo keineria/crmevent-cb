@@ -39,5 +39,6 @@ require __DIR__.'/certificates.php';
 require __DIR__.'/surveys.php';
 require __DIR__.'/portal.php';
 require __DIR__.'/reports.php';
+require __DIR__.'/stands.php';
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
