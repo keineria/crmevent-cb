@@ -7,15 +7,24 @@ use App\Models\ContactEdition;
 use App\Models\EventActivity;
 use App\Models\Registration;
 use App\Models\RegistrationParticipant;
+use App\Support\Roles;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __invoke(): Response
+    public function __invoke(Request $request): Response|RedirectResponse
     {
+        // Desk-only staff (e.g. Registro salidas) have nothing to read here; send them to their tool.
+        if (! $request->user()->hasAnyRole([...Roles::REGISTRATION_VIEWERS, ...Roles::CONTACT_VIEWERS])
+            && $request->user()->hasAnyRole(Roles::CHECKIN_STAFF)) {
+            return redirect()->route('checkin.index');
+        }
+
         $paid = fn () => Registration::whereIn('status', Registration::PAID_STATUSES);
 
         // Distinct attendees per fair, and how many of them had come to an earlier one.

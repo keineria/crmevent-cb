@@ -4,6 +4,7 @@ use App\Http\Controllers\Settings\MailSettingsController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\PluginConnectionController;
 use App\Http\Controllers\Settings\ProfileController;
+use App\Http\Controllers\Settings\UserController;
 use App\Support\Roles;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -36,5 +37,10 @@ Route::middleware(['auth', 'role:'.Roles::ADMIN])->group(function () {
     Route::get('settings/plugin', [PluginConnectionController::class, 'edit'])->name('plugin-connection.edit');
     Route::put('settings/plugin', [PluginConnectionController::class, 'update'])->name('plugin-connection.update');
     Route::post('settings/plugin/test', [PluginConnectionController::class, 'test'])->middleware('throttle:10,1')->name('plugin-connection.test');
+    Route::get('settings/users', [UserController::class, 'index'])->name('users.index');
+    Route::post('settings/users', [UserController::class, 'store'])->name('users.store');
+    Route::put('settings/users/{user}', [UserController::class, 'update'])->name('users.update');
+    Route::delete('settings/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+
     Route::post('settings/plugin/sync', [PluginConnectionController::class, 'sync'])->middleware('throttle:10,1')->name('plugin-connection.sync');
 });

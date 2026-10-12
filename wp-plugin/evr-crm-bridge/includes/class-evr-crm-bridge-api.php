@@ -1,6 +1,6 @@
 <?php
 /**
- * Read-only REST API for the external CRM.
+ * REST API for the external CRM: reads, plus the writes in EVR_CRM_Bridge_Writer.
  *
  * @package EVR_CRM_Bridge
  */
@@ -10,8 +10,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Registers the evr-crm/v1 routes and builds their payloads.
  *
- * Never writes to EVR tables or WooCommerce orders. Orders are always read via
- * wc_get_order() so both legacy posts storage and HPOS work.
+ * The read routes never write. Orders are always read via wc_get_order() so both
+ * legacy posts storage and HPOS work.
  */
 final class EVR_CRM_Bridge_API {
 
@@ -126,6 +126,8 @@ final class EVR_CRM_Bridge_API {
 				),
 			)
 		);
+
+		EVR_CRM_Bridge_Writer::register_routes( $permission );
 	}
 
 	/**
@@ -258,6 +260,25 @@ final class EVR_CRM_Bridge_API {
 	}
 
 	/**
+	 * One order in the same shape as an item of GET /orders, or null when it no longer exists.
+	 *
+	 * @param int $order_id Order ID.
+	 * @return array<string, mixed>|null
+	 */
+	public static function order_payload( $order_id ) {
+		$order = wc_get_order( absint( $order_id ) );
+		if ( ! $order || ! is_a( $order, 'WC_Abstract_Order' ) ) {
+			return null;
+		}
+
+		$participants         = self::load_participants( array( absint( $order_id ) ) );
+		$item                 = self::format_order( $order );
+		$item['participants'] = isset( $participants[ $order_id ] ) ? $participants[ $order_id ] : array();
+
+		return $item;
+	}
+
+	/**
 	 * Build and run the cursor query. Returns limit + 1 rows at most.
 	 *
 	 * @param string $after_updated Cursor datetime ('' for the beginning).
@@ -362,6 +383,7 @@ final class EVR_CRM_Bridge_API {
 				pa.price_snapshot,
 				pa.discount_snapshot,
 				pa.total_snapshot,
+				pa.discount_rule_name_snapshot,
 				pa.created_at,
 				pa.updated_at,
 				pa.cancelled_at,
@@ -389,6 +411,7 @@ final class EVR_CRM_Bridge_API {
 				'price'         => (string) $row['price_snapshot'],
 				'discount'      => (string) $row['discount_snapshot'],
 				'total'         => (string) $row['total_snapshot'],
+				'discount_label' => (string) $row['discount_rule_name_snapshot'],
 				'created_at'    => $row['created_at'],
 				'updated_at'    => $row['updated_at'],
 				'cancelled_at'  => $row['cancelled_at'],

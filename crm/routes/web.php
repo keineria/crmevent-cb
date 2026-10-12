@@ -20,5 +20,6 @@ Route::post('baja/{token}', [UnsubscribeController::class, 'store'])->middleware
 
 require __DIR__.'/contacts.php';
 require __DIR__.'/registrations.php';
+require __DIR__.'/checkin.php';
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
