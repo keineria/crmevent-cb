@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'registration_participant_id', 'evr_assignment_id', 'evr_activity_id', 'name', 'type', 'event_date', 'start_time',
@@ -23,5 +24,10 @@ class RegistrationActivity extends Model
     public function participant(): BelongsTo
     {
         return $this->belongsTo(RegistrationParticipant::class, 'registration_participant_id');
+    }
+
+    public function checkIn(): HasOne
+    {
+        return $this->hasOne(CheckIn::class);
     }
 }
