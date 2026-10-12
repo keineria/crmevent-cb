@@ -1,8 +1,8 @@
 <?php
 
 use App\Http\Controllers\Settings\AppearanceController;
-use App\Http\Controllers\Settings\BrandingController;
 use App\Http\Controllers\Settings\AuditLogController;
+use App\Http\Controllers\Settings\BrandingController;
 use App\Http\Controllers\Settings\MailSettingsController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\PluginConnectionController;
