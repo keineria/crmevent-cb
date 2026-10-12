@@ -13,6 +13,24 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Check the site's SSL certificate
+        continue-on-error: true
+        run: |
+          getent hosts event.colombiabirdfair.com || true
+          echo | openssl s_client -connect event.colombiabirdfair.com:443 -servername event.colombiabirdfair.com 2>/dev/null \
+            | openssl x509 -noout -subject -issuer -dates || echo "No se pudo leer un certificado en el puerto 443."
+          curl -sS -o /dev/null -w "HTTPS %{http_code}, verificación SSL: %{ssl_verify_result}\n" https://event.colombiabirdfair.com/login || true
+
+      - name: Check that the server accepts SSH
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+        run: |
+          if timeout 10 bash -c "</dev/tcp/$HOST/$PORT"; then echo "El puerto SSH $PORT responde."; else
+            echo "::error::El servidor no responde en el puerto SSH $PORT. Revisa que DEPLOY_HOST sea la IP del VPS, el puerto de SSH y el firewall de Hostinger/CyberPanel."
+            exit 1
+          fi
+
       - name: Run installer on the server
         uses: appleboy/ssh-action@v1.2.0
         env:

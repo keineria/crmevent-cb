@@ -15,11 +15,24 @@ interface ParticipantRow {
     contact_id: number | null;
     name: string;
     email: string | null;
+    whatsapp: string | null;
     document: string | null;
+    visits: number;
+    last_purchase_at: string | null;
     shirt_size: string | null;
     meal_type: string | null;
     order: { number: string; status: string; ordered_at: string | null; city: string | null };
     activities: { name: string | null; type: string | null; date: string | null; status: string }[];
+}
+
+interface SeatActivity {
+    evr_id: number;
+    name: string;
+    type: string;
+    event_date: string | null;
+    capacity_total: number;
+    reserved_count: number;
+    confirmed_count: number;
 }
 
 interface PageProps {
@@ -34,7 +47,7 @@ interface PageProps {
     };
     filters: { q?: string; estado?: string; actividad?: number; tipo?: string };
     stats: { paid_orders: number; participants: number; revenue: number; pending_orders: number };
-    activities: { evr_id: number; name: string; type: string; event_date: string | null }[];
+    activities: SeatActivity[];
     types: Record<string, string>;
     statusLabels: Record<string, string>;
     lastSync: string | null;
@@ -46,6 +59,87 @@ const selectClass =
     'border-input bg-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden';
 
 const PAID = ['processing', 'completed'];
+const shortDate = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
+
+function Seats({
+    activities,
+    types,
+    selected,
+    onSelect,
+}: {
+    activities: SeatActivity[];
+    types: Record<string, string>;
+    selected?: number;
+    onSelect: (id?: number) => void;
+}) {
+    const groups = Object.entries(types)
+        .map(([type, label]) => ({ type, label, items: activities.filter((a) => a.type === type) }))
+        .filter((g) => g.items.length > 0);
+
+    if (groups.length === 0) return null;
+
+    return (
+        <details open className="rounded-xl border">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Cupos por actividad</summary>
+            <div className="space-y-4 border-t p-4">
+                {groups.map((g) => (
+                    <section key={g.type}>
+                        <h3 className="text-muted-foreground mb-2 text-xs font-medium">{g.label}</h3>
+                        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                            {g.items.map((a) => {
+                                const used = a.confirmed_count + a.reserved_count;
+                                const free = Math.max(0, a.capacity_total - used);
+                                const pct = a.capacity_total ? Math.min(100, Math.round((used / a.capacity_total) * 100)) : 0;
+                                const active = selected === a.evr_id;
+                                return (
+                                    <li key={a.evr_id}>
+                                        <button
+                                            type="button"
+                                            onClick={() => onSelect(active ? undefined : a.evr_id)}
+                                            aria-pressed={active}
+                                            className={`hover:bg-muted/50 w-full rounded-lg border p-3 text-left text-sm ${active ? 'border-primary bg-muted/50' : ''}`}
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <span className="font-medium">{a.name}</span>
+                                                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{day(a.event_date)}</span>
+                                            </div>
+                                            <div className="mt-2 flex justify-between text-xs tabular-nums">
+                                                <span>
+                                                    {number.format(used)} de {number.format(a.capacity_total)} ocupados
+                                                </span>
+                                                <span className={free === 0 ? 'text-warning font-medium' : 'text-muted-foreground'}>
+                                                    {free === 0 ? 'Agotado' : `${number.format(free)} libres`}
+                                                </span>
+                                            </div>
+                                            <div
+                                                className="bg-muted mt-1.5 h-1.5 overflow-hidden rounded-full"
+                                                role="meter"
+                                                aria-valuemin={0}
+                                                aria-valuemax={a.capacity_total}
+                                                aria-valuenow={used}
+                                                aria-label={`Ocupación de ${a.name}`}
+                                            >
+                                                <div
+                                                    className={`h-full rounded-full ${pct >= 90 ? 'bg-warning' : 'bg-primary'}`}
+                                                    style={{ width: `${pct}%` }}
+                                                />
+                                            </div>
+                                            {a.reserved_count > 0 && (
+                                                <div className="text-muted-foreground mt-1 text-xs">
+                                                    {number.format(a.reserved_count)} en reserva sin pagar
+                                                </div>
+                                            )}
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </section>
+                ))}
+            </div>
+        </details>
+    );
+}
 
 export default function RegistrationsIndex() {
     const { participants, filters, stats, activities, types, statusLabels, lastSync } = usePage<PageProps>().props;
@@ -83,6 +177,8 @@ export default function RegistrationsIndex() {
                     <Stat label="Pedidos pendientes de pago" value={stats.pending_orders} />
                 </dl>
 
+                <Seats activities={activities} types={types} selected={filters.actividad} onSelect={(id) => apply({ actividad: id })} />
+
                 <div className="grid gap-3 md:grid-cols-[1fr_11rem_12rem_16rem]">
                     <form onSubmit={submitSearch} role="search" className="relative">
                         <Label htmlFor="q" className="sr-only">
@@ -100,11 +196,11 @@ export default function RegistrationsIndex() {
                     </form>
                     <label>
                         <span className="sr-only">Estado del pedido</span>
-                        <select className={selectClass} value={filters.estado ?? ''} onChange={(e) => apply({ estado: e.target.value })}>
-                            <option value="">Todos los pedidos</option>
+                        <select className={selectClass} value={filters.estado ?? 'pagadas'} onChange={(e) => apply({ estado: e.target.value })}>
                             <option value="pagadas">Pagados</option>
                             <option value="pendientes">Pendientes de pago</option>
                             <option value="canceladas">Cancelados</option>
+                            <option value="todos">Todos los pedidos</option>
                         </select>
                     </label>
                     <label>
@@ -148,21 +244,24 @@ export default function RegistrationsIndex() {
                     </div>
                 ) : (
                     <div className="overflow-x-auto rounded-xl border">
-                        <table className="w-full min-w-[820px] text-sm">
+                        <table className="w-full min-w-[1180px] text-sm">
                             <thead className="bg-muted/50 text-muted-foreground text-left text-xs">
                                 <tr>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Participante
-                                    </th>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Pedido
-                                    </th>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Actividades
-                                    </th>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Camisa / comida
-                                    </th>
+                                    {[
+                                        'Participante',
+                                        'Correo',
+                                        'WhatsApp',
+                                        'Ciudad',
+                                        'Veces en la feria',
+                                        'Última compra',
+                                        'Pedido',
+                                        'Actividades',
+                                        'Camisa / comida',
+                                    ].map((h) => (
+                                        <th key={h} scope="col" className="px-4 py-3 font-medium whitespace-nowrap">
+                                            {h}
+                                        </th>
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
@@ -176,9 +275,16 @@ export default function RegistrationsIndex() {
                                             ) : (
                                                 <span className="font-medium">{p.name}</span>
                                             )}
-                                            <div className="text-muted-foreground">{[p.email, p.document].filter(Boolean).join(' · ')}</div>
+                                            {p.document && <div className="text-muted-foreground text-xs">{p.document}</div>}
                                         </td>
-                                        <td className="px-4 py-3">
+                                        <td className="px-4 py-3 break-all">{p.email ?? '—'}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap tabular-nums">{p.whatsapp ?? '—'}</td>
+                                        <td className="text-muted-foreground px-4 py-3">{p.order.city ?? '—'}</td>
+                                        <td className="px-4 py-3 text-center tabular-nums">{p.visits > 0 ? number.format(p.visits) : '—'}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap tabular-nums">
+                                            {p.last_purchase_at ? shortDate.format(new Date(p.last_purchase_at)) : '—'}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
                                             <div className="tabular-nums">#{p.order.number}</div>
                                             <div className={PAID.includes(p.order.status) ? 'text-success' : 'text-warning'}>
                                                 {statusLabels[p.order.status] ?? p.order.status}

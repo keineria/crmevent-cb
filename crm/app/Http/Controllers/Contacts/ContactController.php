@@ -9,6 +9,7 @@ use App\Models\Registration;
 use App\Support\Roles;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -45,6 +46,9 @@ class ContactController extends Controller
             })
             ->when($filters['anio'] ?? null, fn (Builder $q, int $year) => $q->whereHas('editions', fn (Builder $e) => $e->where('year', $year)))
             ->with('editions:id,contact_id,year,role')
+            ->withHistory()
+            ->orderByDesc('last_purchase_at')
+            ->orderByDesc('last_year')
             ->orderByDesc('updated_at')
             ->paginate(25)
             ->withQueryString()
@@ -60,6 +64,8 @@ class ContactController extends Controller
                 'is_subscriber' => $c->is_subscriber,
                 'status' => $this->status($c),
                 'years' => $c->editions->pluck('year')->unique()->values(),
+                'visits' => (int) $c->visits,
+                'last_purchase_at' => $c->last_purchase_at ? Carbon::parse($c->last_purchase_at, 'UTC')->toIso8601String() : null,
             ]);
 
         return Inertia::render('contacts/index', [
