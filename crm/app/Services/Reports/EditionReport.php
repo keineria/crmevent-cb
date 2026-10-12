@@ -33,7 +33,17 @@ class EditionReport
         'alimentacion' => 'Alimentación',
         'paises' => 'Países',
         'ciudades' => 'Ciudades',
+        'sexo' => 'Sexo',
         'recurrencia' => 'Ferias anteriores',
+    ];
+
+    /** Categories of the overview, each opening a page with its sections. */
+    public const CATEGORIES = [
+        'salidas' => ['title' => 'Salidas', 'sections' => ['salidas']],
+        'actividades' => ['title' => 'Conferencias y actividades', 'sections' => ['conferencias', 'talleres-pagos', 'talleres-gratuitos', 'otras']],
+        'demograficos' => ['title' => 'Demográficos', 'sections' => ['paises', 'sexo', 'ciudades', 'recurrencia']],
+        'logistica' => ['title' => 'Camisetas y alimentación', 'sections' => ['tallas', 'alimentacion']],
+        'activacion' => ['title' => 'Activación del registro', 'sections' => ['checkin']],
     ];
 
     public const MEALS = ['traditional' => 'Tradicional', 'vegetarian' => 'Vegetariana', 'vegan' => 'Vegana'];
@@ -86,6 +96,8 @@ class EditionReport
                 'activities' => fn ($q) => $q->whereIn('status', RegistrationActivity::ACTIVE_STATUSES)
                     ->select('id', 'registration_participant_id', 'evr_activity_id', 'name', 'type', 'event_date', 'start_time', 'total'),
                 'checkIns:id,registration_participant_id,registration_activity_id',
+                // Sex only exists on contacts imported from past fairs' spreadsheets; the plugin doesn't ask for it.
+                'contact:id,gender',
             ])
             ->withExists(['contact as returning' => fn ($q) => $q->whereHas('editions', fn ($e) => $e
                 ->where('role', ContactEdition::ROLE_ATTENDEE)
@@ -111,6 +123,57 @@ class EditionReport
             'countries' => $people->map(fn ($p) => $this->country($p))->filter()->unique()->count(),
             'trips' => $people->sum(fn ($p) => $p->activities->where('type', 'birding')->count()),
         ];
+    }
+
+    /**
+     * Short summary of each category for the overview page.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function overview(): array
+    {
+        $total = fn (array $cards) => array_sum(array_column($cards, 'count'));
+        $top = fn (array $cards, int $n) => array_map(
+            fn ($c) => ['label' => $c['label'], 'count' => $c['count']],
+            array_slice(array_values(array_filter($cards, fn ($c) => $c['key'] !== self::NONE)), 0, $n),
+        );
+
+        $trips = $this->section('salidas');
+        $days = collect($trips)->groupBy(fn ($c) => $c['date'] ?? '')->map(fn ($cards, $date) => [
+            'date' => $date ?: null,
+            'sold' => $cards->sum('count'),
+            'available' => $cards->sum(fn ($c) => $c['available'] ?? 0),
+            'outings' => $cards->count(),
+        ])->values()->all();
+        $countries = $this->section('paises');
+        $checkin = $this->section('checkin');
+
+        $summaries = [
+            'salidas' => [
+                'sold' => $total($trips),
+                'capacity' => array_sum(array_column($trips, 'capacity')),
+                'available' => array_sum(array_map(fn ($c) => $c['available'] ?? 0, $trips)),
+                'outings' => count($trips),
+                'days' => $days,
+            ],
+            'actividades' => ['items' => array_map(fn ($key) => [
+                'label' => self::SECTIONS[$key],
+                'count' => $total($this->section($key)),
+            ], self::CATEGORIES['actividades']['sections'])],
+            'demograficos' => [
+                'countries' => count(array_filter($countries, fn ($c) => $c['key'] !== self::NONE)),
+                'top' => $top($countries, 5),
+                'sex' => array_map(fn ($c) => ['label' => $c['label'], 'count' => $c['count']], $this->section('sexo')),
+            ],
+            'logistica' => [
+                'sizes' => $top($this->section('tallas'), 8),
+                'meals' => $top($this->section('alimentacion'), 3),
+            ],
+            'activacion' => ['activated' => $checkin[0]['count'], 'total' => $checkin[0]['total']],
+        ];
+
+        return collect(self::CATEGORIES)->map(fn ($c, $key) => ['key' => $key, 'title' => $c['title'], 'summary' => $summaries[$key]])
+            ->values()->all();
     }
 
     /**
@@ -167,7 +230,7 @@ class EditionReport
                 $this->card('primera', 'Primera feria', $people->reject(fn ($p) => $p->returning)->count(), total: $people->count()),
                 $this->card('repite', 'Vinieron antes', $people->filter(fn ($p) => $p->returning)->count(), total: $people->count()),
             ],
-            'tallas', 'alimentacion', 'paises', 'ciudades' => $this->groupCards($section),
+            'tallas', 'alimentacion', 'paises', 'ciudades', 'sexo' => $this->groupCards($section),
             default => abort(404),
         };
     }
@@ -186,7 +249,7 @@ class EditionReport
                 ->filter(fn ($p) => $p->activities->contains('evr_activity_id', (int) $card))->values(),
             'checkin' => $people->filter(fn ($p) => $p->checkIns->isNotEmpty() === ($card === 'si'))->values(),
             'recurrencia' => $people->filter(fn ($p) => (bool) $p->returning === ($card === 'repite'))->values(),
-            'tallas', 'alimentacion', 'paises', 'ciudades' => $people
+            'tallas', 'alimentacion', 'paises', 'ciudades', 'sexo' => $people
                 ->filter(fn ($p) => ($this->groupValue($section, $p) ?? self::NONE) === $card)->values(),
             default => abort(404),
         };
@@ -330,6 +393,19 @@ class EditionReport
             'alimentacion' => $p->meal_type ?: null,
             'paises' => $this->country($p),
             'ciudades' => $this->city($p),
+            'sexo' => $this->sex($p),
+        };
+    }
+
+    private function sex(RegistrationParticipant $p): ?string
+    {
+        $value = mb_strtolower(trim((string) $p->contact?->gender));
+
+        return match (true) {
+            $value === '' => null,
+            in_array($value, ['m', 'masculino', 'hombre', 'male', 'h'], true) => 'Masculino',
+            in_array($value, ['f', 'femenino', 'mujer', 'female'], true) => 'Femenino',
+            default => 'Otro',
         };
     }
 

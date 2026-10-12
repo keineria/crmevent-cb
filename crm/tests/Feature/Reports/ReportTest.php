@@ -189,4 +189,51 @@ class ReportTest extends TestCase
         $this->actingAs($user)->getJson('/reports/salidas?anio=2027&desde=2027-08-10&hasta=2027-08-01')->assertUnprocessable();
         $this->actingAs($user)->getJson('/reports/salidas/personas?anio=2027')->assertUnprocessable();
     }
+
+    public function test_overview_summarises_each_category(): void
+    {
+        $ana = $this->participant('Ana', [10, 20], ['shirt_size' => 'M']);
+        $this->participant('Luis', [10, 11], billing: ['country_name' => 'Ecuador', 'city' => 'Quito']);
+        $this->checkIn($ana, 10);
+
+        $this->actingAs($this->staff(Roles::ANALYST))
+            ->get('/reports?anio=2027')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('categories.0.key', 'salidas')
+                ->where('categories.0.summary.sold', 3)
+                ->where('categories.0.summary.available', 18 + 14)
+                ->where('categories.0.summary.days.0', ['date' => '2027-10-01', 'sold' => 2, 'available' => 18, 'outings' => 1])
+                ->where('categories.1.summary.items.1', ['label' => 'Talleres pagos', 'count' => 1])
+                ->where('categories.2.summary.countries', 2)
+                ->where('categories.2.summary.top.0', ['label' => 'Colombia', 'count' => 1])
+                ->where('categories.4.summary', ['activated' => 1, 'total' => 2]));
+    }
+
+    public function test_category_page_lists_its_sections_and_keeps_filters(): void
+    {
+        $user = $this->staff(Roles::ANALYST);
+
+        $this->actingAs($user)
+            ->get('/reports/categoria/demograficos?anio=2027&desde=2027-08-01')
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('reports/category')
+                ->where('category.title', 'Demográficos')
+                ->where('sections.1', ['key' => 'sexo', 'title' => 'Sexo'])
+                ->where('filters.desde', '2027-08-01'));
+
+        $this->actingAs($user)->get('/reports/categoria/finanzas')->assertNotFound();
+    }
+
+    public function test_sex_comes_from_the_contact_and_is_normalised(): void
+    {
+        foreach (['Ana' => 'Mujer', 'Eva' => 'F', 'Luis' => 'masculino', 'Sin' => null] as $name => $gender) {
+            $p = $this->participant($name, [10]);
+            $p->update(['contact_id' => Contact::factory()->create(['gender' => $gender])->id]);
+        }
+
+        $this->actingAs($this->staff(Roles::ANALYST))->getJson('/reports/sexo?anio=2027')
+            ->assertJsonPath('cards.0', ['key' => 'Femenino', 'label' => 'Femenino', 'count' => 2, 'total' => 4])
+            ->assertJsonPath('cards.1.key', 'Masculino')
+            ->assertJsonPath('cards.2.label', 'Sin dato');
+    }
 }

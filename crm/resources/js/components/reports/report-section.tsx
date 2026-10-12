@@ -1,6 +1,7 @@
 import { day, number } from '@/lib/format';
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import DonutChart from './donut-chart';
 import { getJson, reportQuery, upperFirst, type ReportCard, type ReportFilters } from './types';
 
 const ACTIVITY_SECTIONS = ['salidas', 'conferencias', 'talleres-pagos', 'talleres-gratuitos', 'otras'];
@@ -77,24 +78,53 @@ export default function ReportSection({ sectionKey, title, filters, defaultOpen 
                     )}
                     {cards && cards.length === 0 && <p className="text-muted-foreground text-sm">No hay datos para estos filtros.</p>}
 
+                    {cards && cards.length > 0 && sectionKey === 'sexo' && (
+                        <DonutChart label="Participantes por sexo" slices={cards.map((c) => ({ label: c.label, count: c.count }))} />
+                    )}
+
                     {cards &&
                         cards.length > 0 &&
-                        days.map((group) => (
-                            <div key={group.date ?? 'all'} className="space-y-2">
-                                {group.date !== null && <h3 className="text-muted-foreground text-sm font-medium">{upperFirst(day(group.date))}</h3>}
-                                <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                    {group.cards.map((card) => (
-                                        <li key={card.key}>
-                                            <CardButton card={card} activity={isActivity} onPick={onPick} />
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ))}
+                        days.map((group, i) =>
+                            group.date === null ? (
+                                <CardGrid key="all" cards={group.cards} activity={isActivity} onPick={onPick} />
+                            ) : (
+                                // Outings by day, as dropdowns: the first day starts open.
+                                <details key={group.date} open={i === 0} className="group rounded-lg border">
+                                    <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center justify-between gap-4 rounded-lg px-3 py-2 text-sm">
+                                        <span className="font-medium">{upperFirst(day(group.date))}</span>
+                                        <span className="text-muted-foreground flex items-center gap-3 tabular-nums">
+                                            {daySummary(group.cards)}
+                                            <ChevronDown className="size-4 transition-transform duration-200 group-open:rotate-180" aria-hidden />
+                                        </span>
+                                    </summary>
+                                    <div className="border-t p-3">
+                                        <CardGrid cards={group.cards} activity={isActivity} onPick={onPick} />
+                                    </div>
+                                </details>
+                            ),
+                        )}
                 </div>
             )}
         </section>
     );
+}
+
+function CardGrid({ cards, activity, onPick }: { cards: ReportCard[]; activity: boolean; onPick: (card: ReportCard) => void }) {
+    return (
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {cards.map((card) => (
+                <li key={card.key}>
+                    <CardButton card={card} activity={activity} onPick={onPick} />
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+function daySummary(cards: ReportCard[]): string {
+    const sold = cards.reduce((sum, c) => sum + c.count, 0);
+    const free = cards.reduce((sum, c) => sum + (c.available ?? 0), 0);
+    return `${cards.length} ${cards.length === 1 ? 'salida' : 'salidas'} · ${number.format(sold)} vendidos · ${number.format(free)} libres`;
 }
 
 function CardButton({ card, activity, onPick }: { card: ReportCard; activity: boolean; onPick: (card: ReportCard) => void }) {

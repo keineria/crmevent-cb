@@ -34,11 +34,30 @@ class ReportController extends Controller
                 'hasta' => $report->to?->toDateString(),
             ],
             'editions' => array_values(array_unique([...EditionReport::editions(), $report->year])),
-            'sections' => collect(EditionReport::SECTIONS)->map(fn ($title, $key) => ['key' => $key, 'title' => $title])->values(),
+            'categories' => $report->overview(),
             'summary' => $report->summary(),
             'timeline' => $report->timeline(),
             'today' => now(CheckIn::TIMEZONE)->toDateString(),
             'lastSync' => PluginConnection::query()->first()?->last_synced_at?->toIso8601String(),
+        ]);
+    }
+
+    public function category(Request $request, string $category): Response
+    {
+        abort_unless(isset(EditionReport::CATEGORIES[$category]), 404);
+        $report = $this->report($request);
+
+        return Inertia::render('reports/category', [
+            'filters' => [
+                'anio' => $report->year,
+                'desde' => $report->from?->toDateString(),
+                'hasta' => $report->to?->toDateString(),
+            ],
+            'editions' => array_values(array_unique([...EditionReport::editions(), $report->year])),
+            'category' => ['key' => $category, 'title' => EditionReport::CATEGORIES[$category]['title']],
+            'sections' => collect(EditionReport::CATEGORIES[$category]['sections'])
+                ->map(fn ($key) => ['key' => $key, 'title' => EditionReport::SECTIONS[$key]])->values(),
+            'today' => now(CheckIn::TIMEZONE)->toDateString(),
         ]);
     }
 
