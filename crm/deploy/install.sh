@@ -125,7 +125,17 @@ fi
 [[ -L "${CRM}/public/.well-known" ]] && rm -f "${CRM}/public/.well-known"
 mkdir -p "${CRM}/public/.well-known/acme-challenge"
 chown -R "$SITEUSER": "${CRM}/public/.well-known"
-systemctl restart lsws
+# LiteSpeed sometimes cancels a restart that overlaps its own reload ("Job for lshttpd.service canceled"); try again.
+restart_web() {
+    local try
+    for try in 1 2 3; do
+        systemctl restart lsws && return 0
+        echo "El reinicio del servidor web se canceló (intento ${try}); reintentando en 5 s."
+        sleep 5
+    done
+    return 1
+}
+restart_web
 ACME_DIR="$(awk '/context[[:space:]]+\/\.well-known\/acme-challenge/{f=1} f&&$1=="location"{print $2; exit}' "$VHOST")"
 ACME_DIR="${ACME_DIR//\$VH_ROOT/$SITE}"
 ACME_DIR="${ACME_DIR%/}"
@@ -158,7 +168,7 @@ if [[ -x "$ACME" ]] && { [[ -z "$ISSUER" ]] || grep -qi staging <<<"$ISSUER"; };
     if "$ACME" --issue -d "$DOMAIN" --webroot "$WEBROOT" --server letsencrypt --force \
         && "$ACME" --install-cert -d "$DOMAIN" --cert-file "${CERT_DIR}/cert.pem" --key-file "${CERT_DIR}/privkey.pem" \
             --fullchain-file "${CERT_DIR}/fullchain.pem"; then
-        systemctl restart lsws
+        restart_web
     else
         echo "No se pudo emitir el certificado. Revisa que el puerto 80 esté abierto y que Cloudflare esté pausado o en gris."
     fi
