@@ -14,4 +14,15 @@ return [
      * Check-in QR emails sent per hour in a bulk send. Most mail providers cap a mailbox at around 100 per hour.
      */
     'qr_emails_per_hour' => (int) env('CRM_QR_EMAILS_PER_HOUR', 90),
+
+    /*
+     * Participant portal ("Inscritos"): read-only lookup by document number behind a human check.
+     * With Cloudflare Turnstile keys the check is Turnstile; without them, a simple sum asked by the CRM.
+     */
+    'portal_help_email' => env('CRM_PORTAL_HELP_EMAIL'),
+
+    'turnstile' => [
+        'site_key' => env('CRM_TURNSTILE_SITE_KEY'),
+        'secret' => env('CRM_TURNSTILE_SECRET'),
+    ],
 ];
