@@ -1,5 +1,5 @@
-import AppLogoIcon from '@/components/app-logo-icon';
 import InputError from '@/components/input-error';
+import LoginLogo from '@/components/login-logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -82,7 +82,7 @@ export default function Portal({ people, challenge, helpEmail }: Props) {
             <header className="border-b">
                 <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
                     <div className="flex items-center gap-2">
-                        <AppLogoIcon className="text-primary size-7" />
+                        <LoginLogo className="size-7" imageClassName="h-9 max-w-[160px]" />
                         <div className="leading-tight">
                             <p className="font-semibold">Colombia Birdfair</p>
                             <p className="text-muted-foreground text-xs">Inscritos</p>

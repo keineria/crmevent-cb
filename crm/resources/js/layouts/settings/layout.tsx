@@ -29,6 +29,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     const items = auth.roles.includes('Admin')
         ? [
               ...sidebarNavItems,
+              { title: 'Marca y logos', url: '/settings/branding', icon: null },
               { title: 'Correo de envíos', url: '/settings/mail', icon: null },
               { title: 'Plugin de inscripciones', url: '/settings/plugin', icon: null },
               { title: 'Usuarios', url: '/settings/users', icon: null },

@@ -27,7 +27,9 @@
         <td align="center" style="padding:24px 12px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;">
                 <tr>
-                    <td style="padding:8px 4px 16px;font-size:18px;font-weight:700;color:#2F5D2A;letter-spacing:0.2px;">Colombia Birdfair</td>
+                    <td style="padding:8px 4px 16px;">
+                        @include('mail.partials.brand-header')
+                    </td>
                 </tr>
                 <tr>
                     <td class="card content" style="background:#FFFFFF;border-radius:12px;padding:32px 36px;">

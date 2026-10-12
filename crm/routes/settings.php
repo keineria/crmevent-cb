@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Settings\AppearanceController;
+use App\Http\Controllers\Settings\BrandingController;
 use App\Http\Controllers\Settings\MailSettingsController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\PluginConnectionController;
@@ -7,7 +9,6 @@ use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\UserController;
 use App\Support\Roles;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 Route::middleware('auth')->group(function () {
     Route::redirect('settings', 'settings/profile');
@@ -19,12 +20,18 @@ Route::middleware('auth')->group(function () {
     Route::get('settings/password', [PasswordController::class, 'edit'])->name('password.edit');
     Route::put('settings/password', [PasswordController::class, 'update'])->name('password.update');
 
-    Route::get('settings/appearance', function () {
-        return Inertia::render('settings/appearance');
-    })->name('appearance');
+    Route::get('settings/appearance', [AppearanceController::class, 'edit'])->name('appearance');
+    Route::patch('settings/appearance', [AppearanceController::class, 'update'])->name('appearance.update');
 });
 
+// Logos are public: the login page and emails show them to people who aren't signed in.
+Route::get('marca/{kind}', [BrandingController::class, 'show'])->name('branding.logo');
+
 Route::middleware(['auth', 'role:'.Roles::ADMIN])->group(function () {
+    Route::get('settings/branding', [BrandingController::class, 'edit'])->name('branding.edit');
+    Route::post('settings/branding/{kind}', [BrandingController::class, 'update'])->name('branding.update');
+    Route::delete('settings/branding/{kind}', [BrandingController::class, 'destroy'])->name('branding.destroy');
+
     Route::get('settings/mail', [MailSettingsController::class, 'edit'])->name('mail-settings.edit');
     Route::put('settings/mail/{profile}', [MailSettingsController::class, 'update'])->name('mail-settings.update');
     Route::post('settings/mail/{profile}/test', [MailSettingsController::class, 'test'])
