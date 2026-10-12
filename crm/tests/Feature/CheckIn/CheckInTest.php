@@ -235,7 +235,7 @@ class CheckInTest extends TestCase
         $this->actingAs($this->staff(Roles::REGISTRATION_ADMIN))->from('/checkin')->delete("/checkin/{$checkIn->id}")->assertSessionHas('success');
 
         $this->assertSame(0, CheckIn::count());
-        $this->assertSame('checkin.undone', AuditLog::sole()->action);
+        $this->assertSame(['checkin.created', 'checkin.undone'], AuditLog::orderBy('id')->pluck('action')->all());
     }
 
     public function test_qr_image_and_bulk_send_are_paced_and_not_repeated(): void

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Campaigns;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Campaign;
 use App\Models\MailTemplate;
 use App\Services\Campaigns\CampaignRenderer;
@@ -38,6 +39,7 @@ class MailTemplateController extends Controller
             'body' => $source->body ?? "# Hola {{nombre|amigo}}\n\nEscribe aquí tu mensaje.",
             'updated_by' => $request->user()->id,
         ]);
+        AuditLog::record('template.created', $template, $source ? ['desde_campana' => $source->name] : []);
 
         return to_route('campaigns.templates.edit', $template)->with('success', $source ? 'Guardada como plantilla.' : null);
     }
@@ -54,19 +56,25 @@ class MailTemplateController extends Controller
     {
         $data = $request->validate(CampaignController::contentRules());
 
-        $template->update([
+        $template->fill([
             'name' => $data['name'],
             'subject' => $data['subject'] ?? '',
             'preheader' => $data['preheader'] ?? null,
             'body' => $data['body'] ?? '',
-            'updated_by' => $request->user()->id,
         ]);
+        $changed = array_keys($template->getDirty());
+        $template->updated_by = $request->user()->id;
+        $template->save();
+        if ($changed) {
+            AuditLog::record('template.updated', $template, ['campos' => $changed]);
+        }
 
         return back()->with('success', 'Plantilla guardada.');
     }
 
     public function destroy(MailTemplate $template): RedirectResponse
     {
+        AuditLog::record('template.deleted', $template, ['nombre' => $template->name]);
         $template->delete();
 
         return to_route('campaigns.templates.index')->with('success', 'Plantilla eliminada.');

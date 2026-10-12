@@ -32,6 +32,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
               { title: 'Correo de envíos', url: '/settings/mail', icon: null },
               { title: 'Plugin de inscripciones', url: '/settings/plugin', icon: null },
               { title: 'Usuarios', url: '/settings/users', icon: null },
+              { title: 'Auditoría', url: '/settings/audit', icon: null },
           ]
         : sidebarNavItems;
 

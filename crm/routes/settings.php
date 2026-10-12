@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\AuditLogController;
 use App\Http\Controllers\Settings\MailSettingsController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\PluginConnectionController;
@@ -41,6 +42,10 @@ Route::middleware(['auth', 'role:'.Roles::ADMIN])->group(function () {
     Route::post('settings/users', [UserController::class, 'store'])->name('users.store');
     Route::put('settings/users/{user}', [UserController::class, 'update'])->name('users.update');
     Route::delete('settings/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+    Route::post('settings/users/{user}/activate', [UserController::class, 'activate'])->name('users.activate');
+    Route::post('settings/users/{user}/deactivate', [UserController::class, 'deactivate'])->name('users.deactivate');
+    Route::get('settings/audit', [AuditLogController::class, 'index'])->name('audit.index');
+    Route::get('settings/audit/export', [AuditLogController::class, 'export'])->middleware('throttle:10,1')->name('audit.export');
 
     Route::post('settings/plugin/sync', [PluginConnectionController::class, 'sync'])->middleware('throttle:10,1')->name('plugin-connection.sync');
 });

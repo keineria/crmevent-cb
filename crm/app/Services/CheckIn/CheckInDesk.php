@@ -98,6 +98,7 @@ class CheckInDesk
         }
 
         $result = ['created' => 0, 'already' => 0];
+        $registered = [];
 
         foreach ($activities as $activity) {
             $registration = $rows[$activity->registration_participant_id]->registration;
@@ -129,10 +130,15 @@ class CheckInDesk
                     'checked_in_at' => now(),
                 ]);
                 $result['created']++;
+                $registered[] = $activity->name;
             } catch (UniqueConstraintViolationException) {
                 // Another desk registered the same person a moment ago.
                 $result['already']++;
             }
+        }
+
+        if ($registered) {
+            AuditLog::record('checkin.created', $participant, ['actividades' => $registered, 'metodo' => $method], $user);
         }
 
         return $result;

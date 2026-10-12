@@ -94,6 +94,7 @@ class ContactImportController extends Controller
             'mapping' => ImportFields::guess($headers),
             'total_rows' => $total,
         ]);
+        AuditLog::record('contacts.uploaded', $import, ['filas' => $total, 'tipo' => $import->kind]);
 
         return to_route('contacts.import.show', $import);
     }

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\Roles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -21,12 +22,15 @@ class UserController extends Controller
     public function index(Request $request): Response
     {
         return Inertia::render('settings/users', [
-            'users' => User::with('roles:id,name')->orderBy('name')->get()->map(fn (User $u) => [
+            'users' => User::with('roles:id,name')->orderByRaw('deactivated_at is not null')->orderBy('name')->get()->map(fn (User $u) => [
                 'id' => $u->id,
                 'name' => $u->name,
                 'email' => $u->email,
                 'roles' => $u->roles->pluck('name'),
                 'is_me' => $u->id === $request->user()->id,
+                'active' => $u->isActive(),
+                'last_login_at' => $u->last_login_at?->toIso8601String(),
+                'created_at' => $u->created_at?->toIso8601String(),
             ]),
             'roles' => Roles::all(),
             'roleHints' => Roles::HINTS,
@@ -68,15 +72,54 @@ class UserController extends Controller
             return back()->with('error', 'No puedes quitarte el rol Admin a ti mismo.');
         }
 
+        $before = ['nombre' => $user->name, 'roles' => $user->getRoleNames()->sort()->values()->all()];
+
         $user->name = $data['name'];
         if (filled($data['password'] ?? null)) {
             $user->password = $data['password'];
         }
         $user->save();
         $user->syncRoles($data['roles']);
-        AuditLog::record('user.updated', $user, ['roles' => $data['roles'], 'password_changed' => filled($data['password'] ?? null)]);
+
+        $after = ['nombre' => $user->name, 'roles' => collect($data['roles'])->unique()->sort()->values()->all()];
+        $changes = collect($after)->filter(fn ($value, $key) => $value !== $before[$key])
+            ->map(fn ($value, $key) => ['antes' => $before[$key], 'despues' => $value])->all();
+        if (filled($data['password'] ?? null)) {
+            $changes['contrasena'] = 'cambiada';
+        }
+        if ($changes) {
+            AuditLog::record('user.updated', $user, $changes);
+        }
 
         return back()->with('success', "Usuario actualizado: {$user->email}.");
+    }
+
+    public function activate(User $user): RedirectResponse
+    {
+        if ($user->isActive()) {
+            return back();
+        }
+
+        $user->forceFill(['deactivated_at' => null])->save();
+        AuditLog::record('user.activated', $user);
+
+        return back()->with('success', "Usuario activado: {$user->email}. Ya puede entrar al CRM.");
+    }
+
+    public function deactivate(Request $request, User $user): RedirectResponse
+    {
+        if ($user->is($request->user())) {
+            return back()->with('error', 'No puedes desactivar tu propio usuario.');
+        }
+        if (! $user->isActive()) {
+            return back();
+        }
+
+        // A new remember token signs the person out of every device that kept the session.
+        $user->forceFill(['deactivated_at' => now(), 'remember_token' => Str::random(60)])->save();
+        AuditLog::record('user.deactivated', $user);
+
+        return back()->with('success', "Usuario desactivado: {$user->email}. Ya no puede entrar, y su historial se conserva.");
     }
 
     public function destroy(Request $request, User $user): RedirectResponse
