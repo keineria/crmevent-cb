@@ -15,3 +15,6 @@ Schedule::job(new SyncPluginRegistrations)
     ->everyTenMinutes()
     ->when(fn () => PluginConnection::query()->where('enabled', true)->exists())
     ->withoutOverlapping();
+
+// Start scheduled campaigns and send the next batch, paced by the broadcast mailbox's hourly and daily limits.
+Schedule::command('campaigns:send')->everyMinute()->withoutOverlapping();
