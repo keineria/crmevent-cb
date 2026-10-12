@@ -34,14 +34,16 @@ dnf install -y --setopt=strict=0 lsphp83 lsphp83-common lsphp83-mysqlnd lsphp83-
     lsphp83-gd lsphp83-zip lsphp83-pecl-zip lsphp83-opcache lsphp83-process lsphp83-xml lsphp83-mbstring >/dev/null
 ln -sf "$PHP" /usr/local/bin/php83
 # Solo las que el CRM necesita (composer.lock); intl, bcmath y zip son opcionales.
+# Read the list once: with pipefail, "php -m | grep -q" fails at random when grep closes the pipe early.
+MODULES="$("$PHP" -m)"
 MISSING=""
 for ext in pdo_mysql mbstring openssl dom xmlreader fileinfo tokenizer ctype; do
-    "$PHP" -m | grep -qix "$ext" || MISSING="${MISSING} ${ext}"
+    grep -qix "$ext" <<<"$MODULES" || MISSING="${MISSING} ${ext}"
 done
 [[ -z "$MISSING" ]] || die "a PHP 8.3 le faltan estas extensiones:${MISSING}. Revisa con: dnf search lsphp83"
 # zip solo hace falta para leer .xlsx en el importador; sin ella el CRM funciona y acepta .csv.
 COMPOSER_FLAGS=()
-if ! "$PHP" -m | grep -qix zip; then
+if ! grep -qix zip <<<"$MODULES"; then
     echo "Aviso: PHP 8.3 no tiene la extensión zip. El importador solo aceptará archivos .csv hasta que la instales."
     COMPOSER_FLAGS+=(--ignore-platform-req=ext-zip)
 fi
@@ -106,6 +108,10 @@ grep -q '^APP_KEY=.\+' "${CRM}/.env" || artisan key:generate --force
 artisan migrate --seed --force
 artisan storage:link 2>/dev/null || true
 artisan optimize
+# One-time cleanup Keiner asked for (2026-10-12): contacts created by unpaid checkouts before that stopped.
+if [[ ! -f "${CRM}/storage/app/.pruned-unpaid-v1" ]]; then
+    artisan crm:prune-unpaid-contacts && as_site touch "${CRM}/storage/app/.pruned-unpaid-v1"
+fi
 
 say "Apuntando la raíz del sitio a crm/public"
 if ! grep -q "docRoot.*app/crm/public" "$VHOST"; then
@@ -114,11 +120,51 @@ if ! grep -q "docRoot.*app/crm/public" "$VHOST"; then
     grep -q "autoLoadHtaccess" "$VHOST" || sed -i -E '0,/^\s*rewrite\s*\{/s##rewrite  {\n  autoLoadHtaccess        1#' "$VHOST"
     chown lsadm:nobody "$VHOST" 2>/dev/null || true
 fi
-# CyberPanel writes Let's Encrypt challenges under public_html; expose them from the new docRoot so SSL renews.
-mkdir -p "${SITE}/public_html/.well-known"
-chown "$SITEUSER": "${SITE}/public_html/.well-known"
-ln -sfn "${SITE}/public_html/.well-known" "${CRM}/public/.well-known"
+# Let's Encrypt challenges: CyberPanel usually maps /.well-known/acme-challenge to its own folder with a
+# "context" in the vhost; use that folder when present, otherwise the CRM docRoot.
+[[ -L "${CRM}/public/.well-known" ]] && rm -f "${CRM}/public/.well-known"
+mkdir -p "${CRM}/public/.well-known/acme-challenge"
+chown -R "$SITEUSER": "${CRM}/public/.well-known"
 systemctl restart lsws
+ACME_DIR="$(awk '/context[[:space:]]+\/\.well-known\/acme-challenge/{f=1} f&&$1=="location"{print $2; exit}' "$VHOST")"
+ACME_DIR="${ACME_DIR//\$VH_ROOT/$SITE}"
+ACME_DIR="${ACME_DIR%/}"
+if [[ -n "$ACME_DIR" ]]; then
+    WEBROOT="${ACME_DIR%/.well-known/acme-challenge}"
+else
+    WEBROOT="${CRM}/public"
+fi
+mkdir -p "${WEBROOT}/.well-known/acme-challenge"
+echo "Carpeta de verificación SSL: ${WEBROOT}/.well-known/acme-challenge"
+sleep 2
+echo ok > "${WEBROOT}/.well-known/acme-challenge/crm-check"
+chmod 644 "${WEBROOT}/.well-known/acme-challenge/crm-check"
+CHECK="$(curl -s -o /dev/null -w '%{http_code}' --resolve "${DOMAIN}:80:127.0.0.1" "http://${DOMAIN}/.well-known/acme-challenge/crm-check" || true)"
+echo "Prueba de verificación HTTP: ${CHECK}"
+if [[ "$CHECK" != "200" ]]; then
+    grep -nE "docRoot|context|location|vhssl|^\s*rewrite" "$VHOST" || true
+    curl -sI --resolve "${DOMAIN}:80:127.0.0.1" "http://${DOMAIN}/.well-known/acme-challenge/crm-check" | head -8 || true
+fi
+rm -f "${WEBROOT}/.well-known/acme-challenge/crm-check"
+
+# A Let's Encrypt *staging* certificate (what CyberPanel leaves after failed attempts) is not trusted by browsers.
+# Replace a missing or staging certificate with a real one, in the files the CyberPanel vhost already points to.
+CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
+ACME="/root/.acme.sh/acme.sh"
+ISSUER="$(openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -issuer 2>/dev/null || true)"
+if [[ -x "$ACME" ]] && { [[ -z "$ISSUER" ]] || grep -qi staging <<<"$ISSUER"; }; then
+    say "Emitiendo el certificado SSL de Let's Encrypt"
+    mkdir -p "$CERT_DIR"
+    if "$ACME" --issue -d "$DOMAIN" --webroot "$WEBROOT" --server letsencrypt --force \
+        && "$ACME" --install-cert -d "$DOMAIN" --cert-file "${CERT_DIR}/cert.pem" --key-file "${CERT_DIR}/privkey.pem" \
+            --fullchain-file "${CERT_DIR}/fullchain.pem"; then
+        systemctl restart lsws
+    else
+        echo "No se pudo emitir el certificado. Revisa que el puerto 80 esté abierto y que Cloudflare esté pausado o en gris."
+    fi
+fi
+echo "Certificado SSL: $(openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -issuer -enddate 2>/dev/null | tr '\n' ' ' || echo 'no encontrado')"
+grep -E "^\s*(keyFile|certFile)" "$VHOST" || echo "El vhost no tiene bloque SSL todavía."
 
 say "Configurando la cola (Supervisor) y las tareas programadas (cron)"
 cat > /etc/supervisord.d/crm-worker.ini <<INI

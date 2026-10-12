@@ -125,6 +125,65 @@ class RegistrationSyncTest extends TestCase
         $this->assertSame(2, RegistrationActivity::count());
     }
 
+    public function test_unpaid_orders_do_not_create_contacts_and_the_list_shows_paid_by_default(): void
+    {
+        $this->seed(RoleSeeder::class);
+        $connection = $this->connection();
+        $unpaid = $this->order(601, 'pending');
+        $unpaid['participants'][0]['order_participant_id'] = 6010;
+        $unpaid['participants'][0]['full_name'] = 'Pedro Gil';
+        $unpaid['participants'][0]['email'] = 'pedro@example.com';
+        $unpaid['participants'][0]['document_number'] = '999';
+        $this->fakePlugin([['data' => [$this->order(501), $unpaid], 'next_cursor' => null, 'has_more' => false]]);
+
+        app(RegistrationSync::class)->run($connection);
+
+        $this->assertSame(['ana@example.com'], Contact::pluck('email')->all());
+        $ana = Contact::sole();
+        $ana->editions()->create(['year' => 2024, 'role' => 'asistente']);
+
+        $admin = User::factory()->create();
+        $admin->assignRole(Roles::ADMIN);
+
+        $this->actingAs($admin)->get('/registrations')->assertInertia(fn (Assert $page) => $page
+            ->where('filters.estado', 'pagadas')
+            ->has('participants.data', 1)
+            ->where('participants.data.0.name', 'ANA MARÍA PÉREZ GÓMEZ')
+            ->where('participants.data.0.visits', 2)
+            ->where('participants.data.0.last_purchase_at', fn ($v) => str_starts_with($v, '2026-08-20'))
+            ->has('activities', 2));
+
+        $this->actingAs($admin)->get('/registrations?estado=todos')->assertInertia(fn (Assert $page) => $page->has('participants.data', 2));
+
+        $this->actingAs($admin)->get('/contacts')->assertInertia(fn (Assert $page) => $page
+            ->where('contacts.data.0.visits', 2)
+            ->where('contacts.data.0.email', 'ana@example.com'));
+    }
+
+    public function test_prune_removes_only_contacts_from_unpaid_attempts(): void
+    {
+        $connection = $this->connection();
+        $this->fakePlugin([['data' => [$this->order(501)], 'next_cursor' => null, 'has_more' => false]]);
+        app(RegistrationSync::class)->run($connection);
+
+        // Created by an older sync from an abandoned checkout.
+        $stale = Contact::factory()->create(['source' => Contact::SOURCE_PLUGIN, 'is_attendee' => false, 'is_interested' => false, 'is_subscriber' => false, 'marketing_consent' => false, 'subscription_requested_at' => null, 'unsubscribed_at' => null]);
+        $imported = Contact::factory()->create(['source' => Contact::SOURCE_IMPORT, 'is_attendee' => false, 'marketing_consent' => false]);
+
+        $this->artisan('crm:prune-unpaid-contacts')->expectsOutput('Se borraron 1 contactos de intentos sin pagar.')->assertSuccessful();
+
+        $this->assertModelMissing($stale);
+        $this->assertModelExists($imported);
+        $this->assertSame(1, Contact::where('email', 'ana@example.com')->count());
+    }
+
+    public function test_activity_dates_reach_the_pages_as_plain_dates(): void
+    {
+        EventActivity::create(['evr_id' => 9, 'type' => 'conference', 'name' => 'X', 'event_date' => '2026-10-01', 'capacity_total' => 10, 'status' => 'active']);
+
+        $this->assertSame('2026-10-01', EventActivity::first()->toArray()['event_date']);
+    }
+
     public function test_errors_are_saved_on_the_connection(): void
     {
         $connection = $this->connection();

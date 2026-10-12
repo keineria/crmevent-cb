@@ -23,6 +23,8 @@ interface ContactRow {
     is_subscriber: boolean;
     status: Status;
     years: number[];
+    visits: number;
+    last_purchase_at: string | null;
 }
 
 interface Paginated<T> {
@@ -54,6 +56,7 @@ interface PageProps {
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Contactos', href: '/contacts' }];
+const shortDate = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 
 const selectClass =
     'border-input bg-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden';
@@ -164,24 +167,24 @@ export default function ContactsIndex() {
                     </div>
                 ) : (
                     <div className="overflow-x-auto rounded-xl border">
-                        <table className="w-full min-w-[720px] text-sm">
+                        <table className="w-full min-w-[1080px] text-sm">
                             <thead className="bg-muted/50 text-muted-foreground text-left text-xs">
                                 <tr>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Contacto
-                                    </th>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Tipo
-                                    </th>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Ubicación
-                                    </th>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Ferias
-                                    </th>
-                                    <th scope="col" className="px-4 py-3 font-medium">
-                                        Autorización
-                                    </th>
+                                    {[
+                                        'Contacto',
+                                        'Correo',
+                                        'Teléfono',
+                                        'Tipo',
+                                        'Ubicación',
+                                        'Veces en la feria',
+                                        'Años',
+                                        'Última compra',
+                                        'Autorización',
+                                    ].map((h) => (
+                                        <th key={h} scope="col" className="px-4 py-3 font-medium whitespace-nowrap">
+                                            {h}
+                                        </th>
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
@@ -191,9 +194,10 @@ export default function ContactsIndex() {
                                             <Link href={`/contacts/${c.id}`} className="font-medium underline-offset-4 hover:underline">
                                                 {c.name ?? c.email ?? c.phone ?? 'Sin nombre'}
                                             </Link>
-                                            <div className="text-muted-foreground">{[c.email, c.phone].filter(Boolean).join(' · ')}</div>
                                             {c.organization && <div className="text-muted-foreground text-xs">{c.organization}</div>}
                                         </td>
+                                        <td className="px-4 py-3 break-all">{c.email ?? '—'}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap tabular-nums">{c.phone ?? '—'}</td>
                                         <td className="px-4 py-3">
                                             <div className="flex flex-wrap gap-1">
                                                 {c.is_attendee && <Tag>Asistente</Tag>}
@@ -202,7 +206,11 @@ export default function ContactsIndex() {
                                             </div>
                                         </td>
                                         <td className="text-muted-foreground px-4 py-3">{c.location ?? '—'}</td>
+                                        <td className="px-4 py-3 text-center tabular-nums">{c.visits > 0 ? c.visits : '—'}</td>
                                         <td className="text-muted-foreground px-4 py-3 tabular-nums">{c.years.length ? c.years.join(', ') : '—'}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap tabular-nums">
+                                            {c.last_purchase_at ? shortDate.format(new Date(c.last_purchase_at)) : '—'}
+                                        </td>
                                         <td className={`px-4 py-3 ${STATUS[c.status].className}`}>{STATUS[c.status].label}</td>
                                     </tr>
                                 ))}

@@ -128,7 +128,7 @@ class RegistrationSync
         $buyer = null;
 
         foreach ($order['participants'] ?? [] as $p) {
-            $contact = $this->contactFor($p, $billing, $result);
+            $contact = $this->contactFor($p, $billing, $paid, $result);
 
             $participant = RegistrationParticipant::updateOrCreate(['evr_order_participant_id' => (int) $p['order_participant_id']], [
                 'registration_id' => $registration->id,
@@ -183,7 +183,7 @@ class RegistrationSync
      * @param  array<string, mixed>  $billing
      * @param  array<string, int|bool>  $result
      */
-    private function contactFor(array $p, array $billing, array &$result): ?Contact
+    private function contactFor(array $p, array $billing, bool $paid, array &$result): ?Contact
     {
         [$first, $last] = $this->splitName((string) ($p['full_name'] ?? ''));
         $data = array_filter([
@@ -209,6 +209,11 @@ class RegistrationSync
         // The email may already belong to a relative who registered them; keep it with its owner.
         if (! empty($data['email']) && $contact?->email !== $data['email'] && Contact::where('email', $data['email'])->exists()) {
             unset($data['email']);
+        }
+
+        // Abandoned checkouts and failed payments only link to people we already know.
+        if (! $contact && ! $paid) {
+            return null;
         }
 
         if (! $contact) {

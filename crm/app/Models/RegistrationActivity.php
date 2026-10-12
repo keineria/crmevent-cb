@@ -17,7 +17,7 @@ class RegistrationActivity extends Model
 
     protected function casts(): array
     {
-        return ['event_date' => 'date', 'price' => 'decimal:2', 'discount' => 'decimal:2', 'total' => 'decimal:2'];
+        return ['event_date' => 'date:Y-m-d', 'price' => 'decimal:2', 'discount' => 'decimal:2', 'total' => 'decimal:2'];
     }
 
     public function participant(): BelongsTo

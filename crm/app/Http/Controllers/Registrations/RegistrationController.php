@@ -10,6 +10,7 @@ use App\Models\RegistrationActivity;
 use App\Models\RegistrationParticipant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -25,13 +26,19 @@ class RegistrationController extends Controller
     {
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
-            'estado' => ['nullable', 'in:'.implode(',', array_keys(self::STATUS_GROUPS))],
+            'estado' => ['nullable', 'in:todos,'.implode(',', array_keys(self::STATUS_GROUPS))],
             'actividad' => ['nullable', 'integer'],
             'tipo' => ['nullable', 'in:'.implode(',', array_keys(EventActivity::TYPE_LABELS))],
         ]);
+        // Unpaid attempts (abandoned checkouts, failed payments) would show the same person several times.
+        $filters['estado'] ??= 'pagadas';
 
         $participants = RegistrationParticipant::query()
-            ->with(['registration:id,wc_order_id,number,status,total,ordered_at,billing', 'activities:id,registration_participant_id,evr_activity_id,name,type,event_date,start_time,status'])
+            ->with([
+                'registration:id,wc_order_id,number,status,total,ordered_at,billing',
+                'activities:id,registration_participant_id,evr_activity_id,name,type,event_date,start_time,status',
+                'contact' => fn ($q) => $q->select('contacts.id')->withHistory(),
+            ])
             ->when($filters['q'] ?? null, function (Builder $query, string $term) {
                 $like = "%{$term}%";
                 $query->where(fn (Builder $q) => $q
@@ -40,7 +47,7 @@ class RegistrationController extends Controller
                     ->orWhere('document_number', 'like', $like)
                     ->orWhereHas('registration', fn (Builder $r) => $r->where('number', 'like', $like)));
             })
-            ->when($filters['estado'] ?? null, fn (Builder $q, string $s) => $q->whereHas('registration', fn (Builder $r) => $r->whereIn('status', self::STATUS_GROUPS[$s])))
+            ->when($filters['estado'] !== 'todos', fn (Builder $q) => $q->whereHas('registration', fn (Builder $r) => $r->whereIn('status', self::STATUS_GROUPS[$filters['estado']])))
             ->when($filters['actividad'] ?? null, fn (Builder $q, int $id) => $q->whereHas('activities', fn (Builder $a) => $a->where('evr_activity_id', $id)->whereIn('status', RegistrationActivity::ACTIVE_STATUSES)))
             ->when($filters['tipo'] ?? null, fn (Builder $q, string $t) => $q->whereHas('activities', fn (Builder $a) => $a->where('type', $t)->whereIn('status', RegistrationActivity::ACTIVE_STATUSES)))
             ->orderByDesc(Registration::select('ordered_at')->whereColumn('registrations.id', 'registration_participants.registration_id'))
@@ -52,7 +59,10 @@ class RegistrationController extends Controller
                 'contact_id' => $p->contact_id,
                 'name' => $p->full_name,
                 'email' => $p->email,
+                'whatsapp' => $p->whatsapp,
                 'document' => trim("{$p->document_type} {$p->document_number}") ?: null,
+                'visits' => (int) ($p->contact->visits ?? 0),
+                'last_purchase_at' => $p->contact?->last_purchase_at ? Carbon::parse($p->contact->last_purchase_at, 'UTC')->toIso8601String() : null,
                 'shirt_size' => $p->shirt_size,
                 'meal_type' => $p->meal_type,
                 'order' => [
@@ -80,10 +90,11 @@ class RegistrationController extends Controller
                 'revenue' => (float) (clone $paid)->sum('total'),
                 'pending_orders' => Registration::whereIn('status', self::STATUS_GROUPS['pendientes'])->count(),
             ],
-            'activities' => EventActivity::orderBy('type')->orderBy('event_date')->orderBy('name')->get(['evr_id', 'name', 'type', 'event_date']),
+            'activities' => EventActivity::where('status', '!=', 'archived')->orderBy('event_date')->orderBy('start_time')->orderBy('name')
+                ->get(['evr_id', 'name', 'type', 'event_date', 'capacity_total', 'reserved_count', 'confirmed_count']),
             'types' => EventActivity::TYPE_LABELS,
             'statusLabels' => Registration::STATUS_LABELS,
-            'lastSync' => PluginConnection::query()->value('last_synced_at'),
+            'lastSync' => PluginConnection::query()->first()?->last_synced_at?->toIso8601String(),
         ]);
     }
 
@@ -104,7 +115,7 @@ class RegistrationController extends Controller
                 'status' => $a->status,
             ]),
             'types' => EventActivity::TYPE_LABELS,
-            'lastSync' => PluginConnection::query()->value('last_synced_at'),
+            'lastSync' => PluginConnection::query()->first()?->last_synced_at?->toIso8601String(),
         ]);
     }
 }

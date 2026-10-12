@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 #[Fillable([
@@ -67,6 +68,23 @@ class Contact extends Model
     public function registrationParticipants(): HasMany
     {
         return $this->hasMany(RegistrationParticipant::class);
+    }
+
+    /**
+     * Adds visits (distinct fair years attended), last_year attended and last_purchase_at (latest paid plugin order).
+     */
+    public function scopeWithHistory(Builder $query): void
+    {
+        $attended = fn ($q) => $q->where('role', ContactEdition::ROLE_ATTENDEE);
+
+        $query
+            ->withCount(['editions as visits' => fn ($q) => $attended($q)->select(DB::raw('count(distinct year)'))])
+            ->withMax(['editions as last_year' => $attended], 'year')
+            ->addSelect(['last_purchase_at' => Registration::query()
+                ->selectRaw('max(registrations.ordered_at)')
+                ->join('registration_participants as rp', 'rp.registration_id', '=', 'registrations.id')
+                ->whereColumn('rp.contact_id', 'contacts.id')
+                ->whereIn('registrations.status', Registration::PAID_STATUSES)]);
     }
 
     /**
