@@ -22,11 +22,11 @@ final class Roles
     /** What each role can do, shown when creating staff accounts. */
     public const HINTS = [
         self::ADMIN => 'Todo, incluida la configuración y los usuarios.',
-        self::REGISTRATION_ADMIN => 'Inscripciones, contactos, check-in de entrada y salidas, envío de QR, certificados, y cambiar, retirar o agregar actividades.',
+        self::REGISTRATION_ADMIN => 'Inscripciones, contactos, check-in de entrada y salidas, envío de QR, certificados, encuestas, y cambiar, retirar o agregar actividades.',
         self::REGISTRATION => 'Check-in en la entrada (conferencias, talleres y otras actividades), inscripciones y corregir datos básicos.',
         self::TRIP_REGISTRATION => 'Check-in en el punto de encuentro de las salidas y corregir datos básicos.',
-        self::ANALYST => 'Ver inscripciones, actividades, contactos, reportes y finanzas.',
-        self::MARKETING => 'Contactos, importación de Excel, plantillas, campañas de correo y certificados.',
+        self::ANALYST => 'Ver inscripciones, actividades, contactos, reportes, resultados de encuestas y finanzas.',
+        self::MARKETING => 'Contactos, importación de Excel, plantillas, campañas de correo, certificados y encuestas.',
     ];
 
     /** Roles that can see the contact list. */
@@ -73,6 +73,12 @@ final class Roles
 
     /** Roles that design attendance certificates, tie them to activities and send them. */
     public const CERTIFICATE_MANAGERS = [self::ADMIN, self::REGISTRATION_ADMIN, self::MARKETING];
+
+    /** Roles that write the survey questions, turn the automatic send on or off and send surveys by hand. */
+    public const SURVEY_MANAGERS = [self::ADMIN, self::REGISTRATION_ADMIN, self::MARKETING];
+
+    /** Roles that read survey results (Reportes › Encuestas). */
+    public const SURVEY_VIEWERS = [self::ADMIN, self::REGISTRATION_ADMIN, self::ANALYST, self::MARKETING];
 
     /** Roles that add contacts one by one and edit them (preferred product, profile, Activo / Desinscrito). */
     public const CONTACT_EDITORS = [self::ADMIN, self::REGISTRATION_ADMIN, self::MARKETING];

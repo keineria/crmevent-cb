@@ -8,6 +8,7 @@ use App\Models\CheckIn;
 use App\Models\PluginConnection;
 use App\Models\RegistrationParticipant;
 use App\Services\Reports\EditionReport;
+use App\Services\Surveys\SurveyResults;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -38,6 +39,7 @@ class ReportController extends Controller
             'categories' => $report->overview(),
             'summary' => $report->summary(),
             'timeline' => $report->timeline(),
+            'surveys' => app(SurveyResults::class)->edition($report->year)['totals'],
             'today' => now(CheckIn::TIMEZONE)->toDateString(),
             'lastSync' => PluginConnection::query()->first()?->last_synced_at?->toIso8601String(),
         ]);

@@ -19,6 +19,8 @@ class MailTemplate extends Model
 
     public const CERTIFICATE = 'certificate';
 
+    public const SURVEY = 'survey';
+
     public static function system(string $key): self
     {
         return static::where('system_key', $key)->firstOrFail();
