@@ -114,14 +114,32 @@ if ! grep -q "docRoot.*app/crm/public" "$VHOST"; then
     grep -q "autoLoadHtaccess" "$VHOST" || sed -i -E '0,/^\s*rewrite\s*\{/s##rewrite  {\n  autoLoadHtaccess        1#' "$VHOST"
     chown lsadm:nobody "$VHOST" 2>/dev/null || true
 fi
-# Let's Encrypt challenges must be served from the docRoot itself: LiteSpeed answered 404 through a symlink.
+# Let's Encrypt challenges: CyberPanel usually maps /.well-known/acme-challenge to its own folder with a
+# "context" in the vhost; use that folder when present, otherwise the CRM docRoot.
 [[ -L "${CRM}/public/.well-known" ]] && rm -f "${CRM}/public/.well-known"
 mkdir -p "${CRM}/public/.well-known/acme-challenge"
 chown -R "$SITEUSER": "${CRM}/public/.well-known"
 systemctl restart lsws
-echo ok > "${CRM}/public/.well-known/acme-challenge/crm-check"
-echo "Prueba de verificación HTTP: $(curl -s -o /dev/null -w '%{http_code}' --resolve "${DOMAIN}:80:127.0.0.1" "http://${DOMAIN}/.well-known/acme-challenge/crm-check" || true)"
-rm -f "${CRM}/public/.well-known/acme-challenge/crm-check"
+ACME_DIR="$(awk '/context[[:space:]]+\/\.well-known\/acme-challenge/{f=1} f&&$1=="location"{print $2; exit}' "$VHOST")"
+ACME_DIR="${ACME_DIR//\$VH_ROOT/$SITE}"
+ACME_DIR="${ACME_DIR%/}"
+if [[ -n "$ACME_DIR" ]]; then
+    WEBROOT="${ACME_DIR%/.well-known/acme-challenge}"
+else
+    WEBROOT="${CRM}/public"
+fi
+mkdir -p "${WEBROOT}/.well-known/acme-challenge"
+echo "Carpeta de verificación SSL: ${WEBROOT}/.well-known/acme-challenge"
+sleep 2
+echo ok > "${WEBROOT}/.well-known/acme-challenge/crm-check"
+chmod 644 "${WEBROOT}/.well-known/acme-challenge/crm-check"
+CHECK="$(curl -s -o /dev/null -w '%{http_code}' --resolve "${DOMAIN}:80:127.0.0.1" "http://${DOMAIN}/.well-known/acme-challenge/crm-check" || true)"
+echo "Prueba de verificación HTTP: ${CHECK}"
+if [[ "$CHECK" != "200" ]]; then
+    grep -nE "docRoot|context|location|vhssl|^\s*rewrite" "$VHOST" || true
+    curl -sI --resolve "${DOMAIN}:80:127.0.0.1" "http://${DOMAIN}/.well-known/acme-challenge/crm-check" | head -8 || true
+fi
+rm -f "${WEBROOT}/.well-known/acme-challenge/crm-check"
 
 # A Let's Encrypt *staging* certificate (what CyberPanel leaves after failed attempts) is not trusted by browsers.
 # Replace a missing or staging certificate with a real one, in the files the CyberPanel vhost already points to.
@@ -131,7 +149,7 @@ ISSUER="$(openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -issuer 2>/dev/nul
 if [[ -x "$ACME" ]] && { [[ -z "$ISSUER" ]] || grep -qi staging <<<"$ISSUER"; }; then
     say "Emitiendo el certificado SSL de Let's Encrypt"
     mkdir -p "$CERT_DIR"
-    if "$ACME" --issue -d "$DOMAIN" --webroot "${CRM}/public" --server letsencrypt --force \
+    if "$ACME" --issue -d "$DOMAIN" --webroot "$WEBROOT" --server letsencrypt --force \
         && "$ACME" --install-cert -d "$DOMAIN" --cert-file "${CERT_DIR}/cert.pem" --key-file "${CERT_DIR}/privkey.pem" \
             --fullchain-file "${CERT_DIR}/fullchain.pem"; then
         systemctl restart lsws
