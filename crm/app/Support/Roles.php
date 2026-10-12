@@ -53,6 +53,9 @@ final class Roles
     /** Roles that send participants their QR and see the check-in totals. */
     public const CHECKIN_MANAGERS = [self::ADMIN, self::REGISTRATION_ADMIN];
 
+    /** Roles that edit the email that carries the check-in QR. */
+    public const QR_MAIL_EDITORS = [self::ADMIN, self::REGISTRATION_ADMIN, self::MARKETING];
+
     /** Roles that see campaigns and their results. */
     public const CAMPAIGN_VIEWERS = [self::ADMIN, self::MARKETING, self::ANALYST];
 

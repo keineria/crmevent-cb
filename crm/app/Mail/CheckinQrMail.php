@@ -2,8 +2,10 @@
 
 namespace App\Mail;
 
+use App\Models\MailTemplate;
 use App\Models\RegistrationActivity;
 use App\Models\RegistrationParticipant;
+use App\Services\Campaigns\CampaignRenderer;
 use App\Services\CheckIn\CheckinQr;
 use App\Services\CheckIn\ParticipantRecord;
 use Illuminate\Mail\Mailable;
@@ -11,36 +13,96 @@ use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 
+/**
+ * The email that carries a participant's check-in QR. Its wording comes from the "Correo del código QR" template,
+ * edited in Check-in › Correo del QR; the QR, the code and the activity list are filled in here.
+ *
+ * Template fields: {{nombre}}, {{nombre_completo}}, {{codigo}}, {{correo}}. Blocks, each on its own line: {{qr}}, {{actividades}}.
+ */
 class CheckinQrMail extends Mailable
 {
-    public function __construct(public RegistrationParticipant $participant) {}
+    public const FIELDS = [
+        'nombre' => 'Nombre',
+        'nombre_completo' => 'Nombre completo',
+        'codigo' => 'Código de ingreso',
+        'correo' => 'Correo',
+        'qr' => 'Código QR (bloque)',
+        'actividades' => 'Lista de actividades (bloque)',
+    ];
+
+    /** @var list<array{name: string, when: string}>|null */
+    private ?array $sampleActivities = null;
+
+    /**
+     * @param  array{subject?: string|null, preheader?: string|null, body?: string|null}|null  $draft  Unsaved content, for previews.
+     */
+    public function __construct(public RegistrationParticipant $participant, public ?array $draft = null) {}
+
+    /**
+     * Made-up person for previews and test sends, so they never show real data.
+     */
+    public static function sample(?array $draft = null): self
+    {
+        $mail = new self(new RegistrationParticipant([
+            'full_name' => 'María Pérez',
+            'email' => 'maria@ejemplo.com',
+            'checkin_code' => 'CBF-MPZ7K2QH',
+        ]), $draft);
+        $mail->sampleActivities = [
+            ['name' => 'Conferencias', 'when' => 'jueves 30 de septiembre · 08:00'],
+            ['name' => 'Salida a Laguna de Sonso', 'when' => 'viernes 1 de octubre · 05:00'],
+        ];
+
+        return $mail;
+    }
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: "Tu código de ingreso a Colombia Birdfair · {$this->participant->full_name}");
+        return new Envelope(subject: $this->renderedSubject());
+    }
+
+    public function renderedSubject(): string
+    {
+        $subject = $this->part('subject') ?: 'Tu código de ingreso a Colombia Birdfair';
+
+        return trim(preg_replace('/\s+/', ' ', app(CampaignRenderer::class)->replace($subject, $this->values(), escape: false)));
     }
 
     public function content(): Content
     {
-        $participant = $this->participant;
-
-        // Every activity of the person in paid orders, not only the ones bought with this code.
-        $activities = ParticipantRecord::rows($participant)
-            ->filter(fn (RegistrationParticipant $p) => $p->registration->isPaid())
-            ->flatMap(fn (RegistrationParticipant $p) => $p->activities)
-            ->filter(fn (RegistrationActivity $a) => in_array($a->status, RegistrationActivity::ACTIVE_STATUSES, true))
-            ->sortBy(fn (RegistrationActivity $a) => $a->event_date?->toDateString().' '.$a->start_time)
-            ->values();
+        $renderer = app(CampaignRenderer::class);
+        $preheader = $this->part('preheader');
 
         return new Content(
-            markdown: 'mail.checkin-qr',
+            view: 'mail.checkin-qr',
             with: [
-                'name' => $participant->full_name,
-                'code' => $participant->checkin_code,
-                'png' => app(CheckinQr::class)->png($participant, 8),
-                'activities' => $activities,
+                'subject' => $this->renderedSubject(),
+                'preheader' => $preheader ? $renderer->replace($preheader, $this->values(), escape: false) : null,
+                'body' => $this->bodyHtml(),
+                'png' => app(CheckinQr::class)->png($this->participant, 8),
             ],
         );
+    }
+
+    /**
+     * The body as HTML, with %%QR_SRC%% where the view puts the QR image.
+     */
+    public function bodyHtml(): string
+    {
+        $renderer = app(CampaignRenderer::class);
+        $body = (string) $this->part('body');
+
+        // Blocks go on their own paragraph whatever line they were typed on; without {{qr}} the QR still goes first.
+        $body = preg_replace('/\{\{\s*(qr|actividades)\s*\}\}/u', "\n\n@@$1@@\n\n", $body);
+        if (! str_contains($body, '@@qr@@')) {
+            $body = "@@qr@@\n\n".$body;
+        }
+
+        $html = $renderer->replace($renderer->html($body), $this->values(), escape: true);
+
+        return preg_replace_callback('/(?:<p>)?@@(qr|actividades)@@(?:<\/p>)?/', fn (array $m) => $m[1] === 'qr'
+            ? $this->qrBlock()
+            : $this->activitiesBlock(), $html);
     }
 
     /**
@@ -54,5 +116,82 @@ class CheckinQrMail extends Mailable
             Attachment::fromData(fn () => app(CheckinQr::class)->png($this->participant), "QR-{$this->participant->checkin_code}.png")
                 ->withMime('image/png'),
         ];
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function values(): array
+    {
+        return [
+            'nombre' => $this->participant->full_name,
+            'nombre_completo' => $this->participant->full_name,
+            'codigo' => $this->participant->checkin_code,
+            'correo' => $this->sampleActivities !== null ? $this->participant->email : $this->participant->qrEmail(),
+        ];
+    }
+
+    /**
+     * Subject, preheader or body: from the draft when previewing, else from the saved template.
+     */
+    private function part(string $part): ?string
+    {
+        return $this->draft !== null ? ($this->draft[$part] ?? null) : $this->template()->{$part};
+    }
+
+    private function template(): MailTemplate
+    {
+        return once(fn () => MailTemplate::system(MailTemplate::CHECKIN_QR));
+    }
+
+    private function qrBlock(): string
+    {
+        $code = e($this->participant->checkin_code);
+
+        return '<div style="text-align:center;margin:24px 0;">'
+            .'<img src="%%QR_SRC%%" alt="Código QR '.$code.'" width="240" height="240" style="width:240px;height:240px;">'
+            .'<p style="font-size:20px;font-weight:bold;letter-spacing:2px;margin:8px 0 0;color:#1F2A1C;">'.$code.'</p></div>';
+    }
+
+    private function activitiesBlock(): string
+    {
+        $activities = $this->activities();
+        if ($activities === []) {
+            return '';
+        }
+
+        $items = implode('', array_map(
+            fn (array $a) => '<li>'.e($a['name']).($a['when'] !== '' ? ' · '.e($a['when']) : '').'</li>',
+            $activities,
+        ));
+
+        return '<p><strong>Tus actividades</strong></p><ul>'.$items.'</ul>';
+    }
+
+    /**
+     * Every activity of the person in paid orders, not only the ones bought with this code.
+     *
+     * @return list<array{name: string, when: string}>
+     */
+    private function activities(): array
+    {
+        if ($this->sampleActivities !== null) {
+            return $this->sampleActivities;
+        }
+
+        return ParticipantRecord::rows($this->participant)
+            ->filter(fn (RegistrationParticipant $p) => $p->registration->isPaid())
+            ->flatMap(fn (RegistrationParticipant $p) => $p->activities)
+            ->filter(fn (RegistrationActivity $a) => in_array($a->status, RegistrationActivity::ACTIVE_STATUSES, true))
+            ->sortBy(fn (RegistrationActivity $a) => $a->event_date?->toDateString().' '.$a->start_time)
+            ->map(fn (RegistrationActivity $a) => [
+                'name' => $a->name,
+                'when' => implode(' · ', array_filter([
+                    $a->event_date ? $a->event_date->locale('es')->translatedFormat('l j \d\e F') : null,
+                    $a->start_time ? substr($a->start_time, 0, 5) : null,
+                ])),
+            ])
+            ->values()
+            ->all();
     }
 }

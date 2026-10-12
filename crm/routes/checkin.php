@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CheckIn\CheckInController;
 use App\Http\Controllers\CheckIn\ParticipantEditController;
+use App\Http\Controllers\CheckIn\QrMailController;
 use App\Support\Roles;
 use Illuminate\Support\Facades\Route;
 
@@ -27,4 +28,11 @@ Route::middleware(['auth', Roles::middleware(Roles::ACTIVITY_EDITORS), 'throttle
 Route::middleware(['auth', Roles::middleware(Roles::CHECKIN_MANAGERS)])->group(function () {
     Route::post('checkin/qr/{participant}/send', [CheckInController::class, 'sendQr'])->middleware('throttle:30,1')->name('checkin.qr.send');
     Route::post('checkin/qr-pending', [CheckInController::class, 'sendPendingQrs'])->middleware('throttle:3,1')->name('checkin.qr.pending');
+});
+
+Route::middleware(['auth', Roles::middleware(Roles::QR_MAIL_EDITORS)])->group(function () {
+    Route::get('checkin/correo-qr', [QrMailController::class, 'edit'])->name('checkin.qr_mail.edit');
+    Route::put('checkin/correo-qr', [QrMailController::class, 'update'])->name('checkin.qr_mail.update');
+    Route::post('checkin/correo-qr/vista-previa', [QrMailController::class, 'preview'])->middleware('throttle:120,1')->name('checkin.qr_mail.preview');
+    Route::post('checkin/correo-qr/prueba', [QrMailController::class, 'test'])->middleware('throttle:10,1')->name('checkin.qr_mail.test');
 });
