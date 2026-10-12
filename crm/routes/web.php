@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Public\CampaignTrackingController;
+use App\Http\Controllers\Public\PassController;
 use App\Http\Controllers\Public\SubscriptionController;
 use App\Http\Controllers\Public\UnsubscribeController;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,13 @@ Route::post('baja/{token}', [UnsubscribeController::class, 'store'])->middleware
 
 Route::get('e/o/{token}.gif', [CampaignTrackingController::class, 'open'])->middleware('throttle:120,1')->name('campaigns.track.open');
 Route::get('e/c/{token}', [CampaignTrackingController::class, 'click'])->middleware('throttle:120,1')->name('campaigns.track.click');
+
+// Participant's calendar and wallet passes, linked from the QR email and the portal.
+Route::middleware('throttle:30,1')->prefix('pase/{participant}/{token}')->name('passes.')->group(function () {
+    Route::get('calendario.ics', [PassController::class, 'calendar'])->name('calendar');
+    Route::get('apple', [PassController::class, 'apple'])->name('apple');
+    Route::get('google', [PassController::class, 'google'])->name('google');
+});
 
 require __DIR__.'/contacts.php';
 require __DIR__.'/campaigns.php';

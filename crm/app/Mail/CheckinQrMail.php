@@ -8,6 +8,10 @@ use App\Models\RegistrationParticipant;
 use App\Services\Campaigns\CampaignRenderer;
 use App\Services\CheckIn\CheckinQr;
 use App\Services\CheckIn\ParticipantRecord;
+use App\Services\Passes\AppleWalletPass;
+use App\Services\Passes\CalendarFeed;
+use App\Services\Passes\GoogleWalletPass;
+use App\Services\Passes\PassLinks;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
@@ -150,7 +154,36 @@ class CheckinQrMail extends Mailable
 
         return '<div style="text-align:center;margin:24px 0;">'
             .'<img src="%%QR_SRC%%" alt="Código QR '.$code.'" width="240" height="240" style="width:240px;height:240px;">'
-            .'<p style="font-size:20px;font-weight:bold;letter-spacing:2px;margin:8px 0 0;color:#1F2A1C;">'.$code.'</p></div>';
+            .'<p style="font-size:20px;font-weight:bold;letter-spacing:2px;margin:8px 0 0;color:#1F2A1C;">'.$code.'</p>'
+            .$this->buttons().'</div>';
+    }
+
+    /**
+     * Wallet buttons (only for the wallets with keys set up) and calendar buttons, under the QR.
+     */
+    private function buttons(): string
+    {
+        $sample = $this->sampleActivities !== null;
+        $p = $this->participant;
+        $calendar = $sample ? '#' : PassLinks::calendar($p);
+
+        $wallet = array_filter([
+            'Agregar a Apple Wallet' => $sample ? (AppleWalletPass::configured() ? '#' : null) : PassLinks::apple($p),
+            'Guardar en Google Wallet' => $sample ? (GoogleWalletPass::configured() ? '#' : null) : PassLinks::google($p),
+        ]);
+        $calendars = [
+            'Agregar a Google Calendar' => $sample ? '#' : app(CalendarFeed::class)->googleSubscribeLink($calendar),
+            'iPhone, Outlook y otros (.ics)' => $calendar,
+        ];
+
+        $row = fn (array $links, string $background, string $color) => '<p style="margin:12px 0 0;">'.implode(' ', array_map(
+            fn (string $label, string $url) => '<a href="'.e($url).'" style="display:inline-block;margin:4px;padding:10px 16px;border-radius:8px;'
+                ."background:{$background};color:{$color};font-size:14px;font-weight:600;text-decoration:none;\">".e($label).'</a>',
+            array_keys($links), $links,
+        )).'</p>';
+
+        return ($wallet ? $row($wallet, '#1F2A1C', '#FFFFFF') : '')
+            .$row($calendars, '#EEF3EC', '#2F5D2A');
     }
 
     private function activitiesBlock(): string
