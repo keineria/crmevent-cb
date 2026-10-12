@@ -94,7 +94,7 @@ class RegistrationController extends Controller
                 ->get(['evr_id', 'name', 'type', 'event_date', 'capacity_total', 'reserved_count', 'confirmed_count']),
             'types' => EventActivity::TYPE_LABELS,
             'statusLabels' => Registration::STATUS_LABELS,
-            'lastSync' => PluginConnection::query()->value('last_synced_at'),
+            'lastSync' => PluginConnection::query()->first()?->last_synced_at?->toIso8601String(),
         ]);
     }
 
@@ -115,7 +115,7 @@ class RegistrationController extends Controller
                 'status' => $a->status,
             ]),
             'types' => EventActivity::TYPE_LABELS,
-            'lastSync' => PluginConnection::query()->value('last_synced_at'),
+            'lastSync' => PluginConnection::query()->first()?->last_synced_at?->toIso8601String(),
         ]);
     }
 }

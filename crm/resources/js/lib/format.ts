@@ -7,7 +7,8 @@ export const dateTime = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', 
 /** Formats a plain Y-m-d date without shifting it across time zones. */
 export function day(value: string | null): string {
     if (!value) return '—';
-    const [y, m, d] = value.split('-').map(Number);
+    const [y, m, d] = value.slice(0, 10).split('-').map(Number);
+    if (!y || !m || !d) return value;
     return new Intl.DateTimeFormat('es-CO', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
         new Date(Date.UTC(y, m - 1, d)),
     );

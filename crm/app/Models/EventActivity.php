@@ -23,6 +23,6 @@ class EventActivity extends Model
 
     protected function casts(): array
     {
-        return ['event_date' => 'date', 'price' => 'decimal:2'];
+        return ['event_date' => 'date:Y-m-d', 'price' => 'decimal:2'];
     }
 }

@@ -108,6 +108,10 @@ grep -q '^APP_KEY=.\+' "${CRM}/.env" || artisan key:generate --force
 artisan migrate --seed --force
 artisan storage:link 2>/dev/null || true
 artisan optimize
+# One-time cleanup Keiner asked for (2026-10-12): contacts created by unpaid checkouts before that stopped.
+if [[ ! -f "${CRM}/storage/app/.pruned-unpaid-v1" ]]; then
+    artisan crm:prune-unpaid-contacts && as_site touch "${CRM}/storage/app/.pruned-unpaid-v1"
+fi
 
 say "Apuntando la raíz del sitio a crm/public"
 if ! grep -q "docRoot.*app/crm/public" "$VHOST"; then
