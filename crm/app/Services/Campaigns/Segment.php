@@ -123,7 +123,7 @@ class Segment
                 }
             }))
             ->when($s['min_estrellas'] ?? null, fn (Builder $q, int $stars) => $q->where('engagement_stars', '>=', $stars))
-            ->when($s['usuario'] ?? null, fn (Builder $q, string $type) => $q->userType($type))
+            ->when($s['usuario'] ?? null, fn (Builder $q, string $type) => $q->ofUserType($type))
             ->when($s['pais'] ?? null, fn (Builder $q, string $country) => $country === 'colombia'
                 ? $q->where(fn (Builder $c) => $c->whereNull('country')->orWhere('country', '')->orWhere('country', 'like', 'colombia%'))
                 : $q->whereNotNull('country')->where('country', '!=', '')->where('country', 'not like', 'colombia%'));

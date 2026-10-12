@@ -45,7 +45,7 @@ class ContactController extends Controller
             ->when($filters['estado'] ?? null, fn (Builder $q, string $status) => $status === Contact::STATUS_ACTIVE
                 ? $q->whereNull('unsubscribed_at')
                 : $q->whereNotNull('unsubscribed_at'))
-            ->when($filters['usuario'] ?? null, fn (Builder $q, string $type) => $q->userType($type))
+            ->when($filters['usuario'] ?? null, fn (Builder $q, string $type) => $q->ofUserType($type))
             ->when($filters['producto'] ?? null, fn (Builder $q, string $product) => $q->whereJsonContains('preferred_products', $product))
             ->when($filters['estrellas'] ?? null, fn (Builder $q, int $stars) => $q->where('engagement_stars', '>=', $stars))
             ->when($filters['anio'] ?? null, fn (Builder $q, int $year) => $q->whereHas('editions', fn (Builder $e) => $e->where('year', $year)))
@@ -83,7 +83,7 @@ class ContactController extends Controller
                 'attendees' => Contact::where('is_attendee', true)->count(),
                 'interested' => Contact::where('is_interested', true)->count(),
                 'subscribers' => Contact::where('is_subscriber', true)->count(),
-                'clients' => Contact::userType(Contact::USER_CLIENT)->count(),
+                'clients' => Contact::ofUserType(Contact::USER_CLIENT)->count(),
                 'active' => Contact::whereNull('unsubscribed_at')->count(),
                 'unsubscribed' => Contact::whereNotNull('unsubscribed_at')->count(),
             ],

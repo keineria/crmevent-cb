@@ -127,7 +127,7 @@ class Contact extends Model
     /**
      * Cliente (bought at least once) or Suscriptor (has not bought yet).
      */
-    public function scopeUserType(Builder $query, string $type): void
+    public function scopeOfUserType(Builder $query, string $type): void
     {
         $bought = fn (Builder $q) => $q
             ->where('is_attendee', true)
