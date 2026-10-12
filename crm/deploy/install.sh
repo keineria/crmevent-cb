@@ -34,14 +34,16 @@ dnf install -y --setopt=strict=0 lsphp83 lsphp83-common lsphp83-mysqlnd lsphp83-
     lsphp83-gd lsphp83-zip lsphp83-pecl-zip lsphp83-opcache lsphp83-process lsphp83-xml lsphp83-mbstring >/dev/null
 ln -sf "$PHP" /usr/local/bin/php83
 # Solo las que el CRM necesita (composer.lock); intl, bcmath y zip son opcionales.
+# Read the list once: with pipefail, "php -m | grep -q" fails at random when grep closes the pipe early.
+MODULES="$("$PHP" -m)"
 MISSING=""
 for ext in pdo_mysql mbstring openssl dom xmlreader fileinfo tokenizer ctype; do
-    "$PHP" -m | grep -qix "$ext" || MISSING="${MISSING} ${ext}"
+    grep -qix "$ext" <<<"$MODULES" || MISSING="${MISSING} ${ext}"
 done
 [[ -z "$MISSING" ]] || die "a PHP 8.3 le faltan estas extensiones:${MISSING}. Revisa con: dnf search lsphp83"
 # zip solo hace falta para leer .xlsx en el importador; sin ella el CRM funciona y acepta .csv.
 COMPOSER_FLAGS=()
-if ! "$PHP" -m | grep -qix zip; then
+if ! grep -qix zip <<<"$MODULES"; then
     echo "Aviso: PHP 8.3 no tiene la extensión zip. El importador solo aceptará archivos .csv hasta que la instales."
     COMPOSER_FLAGS+=(--ignore-platform-req=ext-zip)
 fi
