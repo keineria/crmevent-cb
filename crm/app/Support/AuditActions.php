@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Campaign;
+use App\Models\Contact;
 use App\Models\ContactImport;
 use App\Models\Expense;
 use App\Models\MailSetting;
@@ -76,6 +77,9 @@ final class AuditActions
 
         'contacts.uploaded' => ['contacts', 'Subió un Excel de contactos'],
         'contacts.imported' => ['contacts', 'Importó contactos'],
+        'contacts.template' => ['contacts', 'Descargó la plantilla de contactos'],
+        'contacts.created' => ['contacts', 'Creó un contacto'],
+        'contacts.updated' => ['contacts', 'Editó un contacto'],
 
         'expense.created' => ['finance', 'Registró un costo'],
         'expense.updated' => ['finance', 'Editó un costo'],
@@ -119,6 +123,7 @@ final class AuditActions
             $subject instanceof Campaign, $subject instanceof MailTemplate => (string) $subject->name,
             $subject instanceof Expense => (string) $subject->concept,
             $subject instanceof ContactImport => (string) $subject->original_name,
+            $subject instanceof Contact => trim($subject->fullName().' · '.($subject->email ?? $subject->document_number ?? ''), ' ·') ?: "Contacto #{$subject->id}",
             $subject instanceof MailSetting => "Perfil {$subject->profile}",
             $subject instanceof PluginConnection => 'Plugin de inscripciones',
             default => class_basename($subject)." #{$subject->getKey()}",

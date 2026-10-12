@@ -1,10 +1,14 @@
+import Flash from '@/components/campaigns/flash';
 import Heading from '@/components/heading';
+import Stars from '@/components/stars';
+import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { ACTIVITY_STATUS, dateTime, day, money } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
+import { Pencil } from 'lucide-react';
 
-type Status = 'acepta' | 'baja' | 'pendiente' | 'sin_consentimiento';
+type Status = 'activo' | 'desinscrito';
 
 interface ContactData {
     id: number;
@@ -21,6 +25,16 @@ interface ContactData {
     is_interested: boolean;
     is_subscriber: boolean;
     status: Status;
+    awaiting_confirmation: boolean;
+    products: string[];
+    products_manual: boolean;
+    profile: string | null;
+    language: string | null;
+    referral_source: string | null;
+    stars: number | null;
+    emails_sent: number;
+    emails_opened: number;
+    emails_clicked: number;
     consent_source: string | null;
     consent_at: string | null;
     unsubscribed_at: string | null;
@@ -40,6 +54,7 @@ interface PageProps {
         allergies: string | null;
         activities: { name: string | null; type: string | null; date: string | null; status: string; total: number }[];
     }[];
+    canEdit: boolean;
     [key: string]: unknown;
 }
 
@@ -51,14 +66,12 @@ const SOURCES: Record<string, string> = {
 };
 
 const STATUS: Record<Status, { label: string; className: string }> = {
-    acepta: { label: 'Acepta difusiones', className: 'text-success' },
-    pendiente: { label: 'Confirmación pendiente', className: 'text-warning' },
-    sin_consentimiento: { label: 'Sin autorización para difusiones', className: 'text-muted-foreground' },
-    baja: { label: 'Dado de baja', className: 'text-destructive' },
+    activo: { label: 'Activo', className: 'text-success' },
+    desinscrito: { label: 'Desinscrito', className: 'text-destructive' },
 };
 
 export default function ContactShow() {
-    const { contact, editions, registrations } = usePage<PageProps>().props;
+    const { contact, editions, registrations, canEdit } = usePage<PageProps>().props;
     const title = contact.name ?? contact.email ?? 'Contacto';
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Contactos', href: '/contacts' },
@@ -71,9 +84,19 @@ export default function ContactShow() {
             <Head title={title} />
 
             <div className="flex max-w-5xl min-w-0 flex-1 flex-col gap-8 p-4 md:p-6">
-                <div>
+                <div className="flex flex-wrap items-start justify-between gap-4">
                     <Heading title={title} description={types.join(' · ') || 'Contacto'} />
+                    {canEdit && (
+                        <Button variant="outline" asChild>
+                            <Link href={`/contacts/${contact.id}/edit`}>
+                                <Pencil aria-hidden />
+                                Editar
+                            </Link>
+                        </Button>
+                    )}
                 </div>
+
+                <Flash />
 
                 <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
                     <aside className="space-y-4">
@@ -86,6 +109,9 @@ export default function ContactShow() {
                                     ['Género', contact.gender],
                                     ['Organización', contact.organization],
                                     ['Ubicación', contact.location],
+                                    ['Perfil', contact.profile],
+                                    ['Idioma', contact.language],
+                                    ['Nos conoció por', contact.referral_source],
                                     ['Origen', SOURCES[contact.source] ?? contact.source],
                                     ['En el CRM desde', dateTime.format(new Date(contact.created_at))],
                                 ] as const
@@ -96,9 +122,30 @@ export default function ContactShow() {
                                 </div>
                             ))}
                         </dl>
+                        <div className="space-y-3 rounded-xl border p-4 text-sm">
+                            <div>
+                                <div className="text-muted-foreground text-xs">Producto preferido</div>
+                                <div className="font-medium">{contact.products.length ? contact.products.join(', ') : 'Sin compras aún'}</div>
+                                <div className="text-muted-foreground text-xs">
+                                    {contact.products_manual ? 'Elegido a mano' : 'Calculado con sus compras'}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-muted-foreground text-xs">Interacción con los correos</div>
+                                <Stars value={contact.stars} className="mt-1" />
+                                {contact.emails_sent > 0 && (
+                                    <div className="text-muted-foreground text-xs">
+                                        Abrió {contact.emails_opened} y hizo clic en {contact.emails_clicked} de {contact.emails_sent} campañas
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                         <div className="rounded-xl border p-4 text-sm">
                             <div className={`font-medium ${STATUS[contact.status].className}`}>{STATUS[contact.status].label}</div>
-                            {contact.consent_source && contact.status === 'acepta' && (
+                            {contact.awaiting_confirmation && (
+                                <p className="text-warning mt-1 text-xs">Se suscribió en el sitio web y aún no confirma su correo.</p>
+                            )}
+                            {contact.consent_source && contact.status === 'activo' && !contact.awaiting_confirmation && (
                                 <p className="text-muted-foreground mt-1 text-xs">
                                     {contact.consent_source}
                                     {contact.consent_at && ` · ${dateTime.format(new Date(contact.consent_at))}`}
@@ -106,7 +153,7 @@ export default function ContactShow() {
                             )}
                             {contact.unsubscribed_at && (
                                 <p className="text-muted-foreground mt-1 text-xs">
-                                    Se dio de baja el {dateTime.format(new Date(contact.unsubscribed_at))}
+                                    Se desinscribió el {dateTime.format(new Date(contact.unsubscribed_at))}
                                 </p>
                             )}
                         </div>

@@ -112,6 +112,8 @@ artisan optimize
 if [[ ! -f "${CRM}/storage/app/.pruned-unpaid-v1" ]]; then
     artisan crm:prune-unpaid-contacts && as_site touch "${CRM}/storage/app/.pruned-unpaid-v1"
 fi
+# Preferred products and stars of each contact (also hourly from the scheduler).
+artisan contacts:refresh-insights || true
 
 say "Apuntando la raíz del sitio a crm/public"
 if ! grep -q "docRoot.*app/crm/public" "$VHOST"; then

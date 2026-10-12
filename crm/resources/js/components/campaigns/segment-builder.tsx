@@ -10,6 +10,7 @@ import { type Segment } from './types';
 export interface SegmentOptions {
     years: number[];
     activities: { id: number; name: string; type: string; date: string | null }[];
+    products: Record<string, string>;
 }
 
 const TYPES: [string, string][] = [
@@ -70,7 +71,7 @@ export default function SegmentBuilder({ value, onChange, options }: { value: Se
                             recibirán esta campaña
                         </>
                     )}
-                    <div className="text-muted-foreground text-xs">Solo cuenta a quienes aceptan difusiones y no se han dado de baja.</div>
+                    <div className="text-muted-foreground text-xs">Solo cuenta contactos activos (no desinscritos) con correo.</div>
                 </div>
             </div>
 
@@ -88,6 +89,22 @@ export default function SegmentBuilder({ value, onChange, options }: { value: Se
                     ))}
                 </div>
                 <p className="text-muted-foreground text-xs">Sin marcar ninguno, entran todos los tipos.</p>
+            </fieldset>
+
+            <fieldset className="grid gap-2">
+                <legend className="mb-2 text-sm font-medium">Producto preferido</legend>
+                <div className="flex flex-wrap gap-4">
+                    {Object.entries(options.products ?? {}).map(([key, label]) => (
+                        <CheckLabel
+                            key={key}
+                            id={`producto-${key}`}
+                            label={label}
+                            checked={(value.productos ?? []).includes(key)}
+                            onChange={(on) => set({ productos: toggle(value.productos, key, on) })}
+                        />
+                    ))}
+                </div>
+                <p className="text-muted-foreground text-xs">Sin marcar ninguno, entran todos.</p>
             </fieldset>
 
             {options.years.length > 0 && (
@@ -129,6 +146,19 @@ export default function SegmentBuilder({ value, onChange, options }: { value: Se
                         ['', 'Todas'],
                         ['colombia', 'Colombia'],
                         ['internacional', 'Fuera de Colombia'],
+                    ]}
+                />
+                <SelectField
+                    id="min_estrellas"
+                    label="Interacción con los correos"
+                    value={value.min_estrellas ? String(value.min_estrellas) : ''}
+                    onChange={(v) => set({ min_estrellas: v ? Number(v) : undefined })}
+                    options={[
+                        ['', 'Cualquiera'],
+                        ['5', '★★★★★ (5 estrellas)'],
+                        ['4', '★★★★ o más'],
+                        ['3', '★★★ o más'],
+                        ['2', '★★ o más'],
                     ]}
                 />
                 <SelectField

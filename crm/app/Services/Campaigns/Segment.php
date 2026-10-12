@@ -41,6 +41,9 @@ class Segment
             'segment.actividades' => ['nullable', 'array'],
             'segment.actividades.*' => ['integer'],
             'segment.pais' => ['nullable', 'in:colombia,internacional'],
+            'segment.productos' => ['nullable', 'array'],
+            'segment.productos.*' => ['string', 'in:'.implode(',', array_keys(Contact::PRODUCTS))],
+            'segment.min_estrellas' => ['nullable', 'integer', 'between:1,5'],
         ];
     }
 
@@ -55,13 +58,13 @@ class Segment
         $segment ??= [];
         $clean = [];
 
-        foreach (['tipos', 'anios', 'actividades'] as $list) {
+        foreach (['tipos', 'anios', 'actividades', 'productos'] as $list) {
             $values = array_values(array_unique(array_filter((array) ($segment[$list] ?? []), fn ($v) => $v !== null && $v !== '')));
             if ($values) {
-                $clean[$list] = $list === 'tipos' ? $values : array_map('intval', $values);
+                $clean[$list] = in_array($list, ['tipos', 'productos'], true) ? $values : array_map('intval', $values);
             }
         }
-        foreach (['min_visitas', 'compro', 'no_compro'] as $int) {
+        foreach (['min_visitas', 'compro', 'no_compro', 'min_estrellas'] as $int) {
             if (! empty($segment[$int])) {
                 $clean[$int] = (int) $segment[$int];
             }
@@ -111,6 +114,12 @@ class Segment
                     fn (Builder $a) => $a->whereIn('evr_activity_id', $ids)->whereIn('status', RegistrationActivity::ACTIVE_STATUSES),
                 ),
             ))
+            ->when($s['productos'] ?? null, fn (Builder $q, array $products) => $q->where(function (Builder $q) use ($products) {
+                foreach ($products as $product) {
+                    $q->orWhereJsonContains('preferred_products', $product);
+                }
+            }))
+            ->when($s['min_estrellas'] ?? null, fn (Builder $q, int $stars) => $q->where('engagement_stars', '>=', $stars))
             ->when($s['pais'] ?? null, fn (Builder $q, string $country) => $country === 'colombia'
                 ? $q->where(fn (Builder $c) => $c->whereNull('country')->orWhere('country', '')->orWhere('country', 'like', 'colombia%'))
                 : $q->whereNotNull('country')->where('country', '!=', '')->where('country', 'not like', 'colombia%'));
@@ -149,14 +158,20 @@ class Segment
         if ($s['pais'] ?? null) {
             $lines[] = $s['pais'] === 'colombia' ? 'Solo Colombia' : 'Solo fuera de Colombia';
         }
+        if ($s['productos'] ?? null) {
+            $lines[] = 'Producto preferido: '.implode(' o ', array_map(fn ($p) => Contact::PRODUCTS[$p] ?? $p, $s['productos']));
+        }
+        if ($s['min_estrellas'] ?? null) {
+            $lines[] = "{$s['min_estrellas']} estrellas o más";
+        }
 
-        return $lines ?: ['Todos los que aceptan difusiones'];
+        return $lines ?: ['Todos los contactos activos'];
     }
 
     /**
      * Choices for the segment builder.
      *
-     * @return array{years: Collection<int, int>, activities: Collection<int, array<string, mixed>>}
+     * @return array{years: Collection<int, int>, activities: Collection<int, array<string, mixed>>, products: array<string, string>}
      */
     public static function options(): array
     {
@@ -174,6 +189,6 @@ class Segment
                 'date' => $a->event_date?->toDateString(),
             ])->values();
 
-        return ['years' => $years, 'activities' => $activities];
+        return ['years' => $years, 'activities' => $activities, 'products' => Contact::PRODUCTS];
     }
 }

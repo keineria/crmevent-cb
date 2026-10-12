@@ -1,4 +1,5 @@
 import Heading from '@/components/heading';
+import Stars from '@/components/stars';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -6,10 +7,10 @@ import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, Code, Copy, Search, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Code, Copy, Search, Upload, UserPlus } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
 
-type Status = 'acepta' | 'baja' | 'pendiente' | 'sin_consentimiento';
+type Status = 'activo' | 'desinscrito';
 
 interface ContactRow {
     id: number;
@@ -22,6 +23,8 @@ interface ContactRow {
     is_interested: boolean;
     is_subscriber: boolean;
     status: Status;
+    stars: number | null;
+    products: string[];
     years: number[];
     visits: number;
     last_purchase_at: string | null;
@@ -42,16 +45,20 @@ interface Filters {
     q?: string;
     tipo?: string;
     estado?: string;
+    producto?: string;
+    estrellas?: number;
     anio?: number;
 }
 
 interface PageProps {
     contacts: Paginated<ContactRow>;
     filters: Filters;
-    stats: { total: number; attendees: number; interested: number; subscribers: number; mailable: number };
+    stats: { total: number; attendees: number; interested: number; subscribers: number; active: number; unsubscribed: number };
+    products: Record<string, string>;
     years: number[];
     formEndpoint: string;
     canImport: boolean;
+    canEdit: boolean;
     [key: string]: unknown;
 }
 
@@ -62,16 +69,14 @@ const selectClass =
     'border-input bg-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden';
 
 const STATUS: Record<Status, { label: string; className: string }> = {
-    acepta: { label: 'Acepta difusiones', className: 'text-success' },
-    pendiente: { label: 'Confirmación pendiente', className: 'text-warning' },
-    sin_consentimiento: { label: 'Sin autorización', className: 'text-muted-foreground' },
-    baja: { label: 'Dado de baja', className: 'text-destructive' },
+    activo: { label: 'Activo', className: 'text-success' },
+    desinscrito: { label: 'Desinscrito', className: 'text-destructive' },
 };
 
 const number = new Intl.NumberFormat('es-CO');
 
 export default function ContactsIndex() {
-    const { contacts, filters, stats, years, formEndpoint, canImport } = usePage<PageProps>().props;
+    const { contacts, filters, stats, products, years, formEndpoint, canImport, canEdit } = usePage<PageProps>().props;
     const [q, setQ] = useState(filters.q ?? '');
 
     const apply = (next: Filters) => {
@@ -94,6 +99,14 @@ export default function ContactsIndex() {
                     <Heading title="Contactos" description="Asistentes de ferias anteriores, interesados y suscriptores del sitio web." />
                     <div className="flex flex-wrap gap-2">
                         <FormSnippetDialog endpoint={formEndpoint} />
+                        {canEdit && (
+                            <Button variant="outline" asChild>
+                                <Link href="/contacts/create">
+                                    <UserPlus aria-hidden />
+                                    Nuevo contacto
+                                </Link>
+                            </Button>
+                        )}
                         {canImport && (
                             <Button asChild>
                                 <Link href="/contacts/import">
@@ -105,15 +118,16 @@ export default function ContactsIndex() {
                     </div>
                 </div>
 
-                <dl className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
                     <Stat label="Total" value={stats.total} />
                     <Stat label="Asistentes" value={stats.attendees} />
                     <Stat label="Interesados" value={stats.interested} />
                     <Stat label="Suscriptores" value={stats.subscribers} />
-                    <Stat label="Aceptan difusiones" value={stats.mailable} />
+                    <Stat label="Activos" value={stats.active} />
+                    <Stat label="Desinscritos" value={stats.unsubscribed} />
                 </dl>
 
-                <div className="grid gap-3 md:grid-cols-[1fr_11rem_13rem_10rem]">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[1fr_10rem_10rem_11rem_10rem_9rem]">
                     <form onSubmit={submitSearch} role="search" className="relative">
                         <Label htmlFor="q" className="sr-only">
                             Buscar
@@ -140,15 +154,31 @@ export default function ContactsIndex() {
                         ]}
                     />
                     <FilterSelect
-                        label="Autorización"
+                        label="Estado"
                         value={filters.estado ?? ''}
                         onChange={(v) => apply({ estado: v })}
                         options={[
-                            ['', 'Cualquier autorización'],
-                            ['acepta', STATUS.acepta.label],
-                            ['pendiente', STATUS.pendiente.label],
-                            ['sin_consentimiento', STATUS.sin_consentimiento.label],
-                            ['baja', STATUS.baja.label],
+                            ['', 'Cualquier estado'],
+                            ['activo', STATUS.activo.label],
+                            ['desinscrito', STATUS.desinscrito.label],
+                        ]}
+                    />
+                    <FilterSelect
+                        label="Producto preferido"
+                        value={filters.producto ?? ''}
+                        onChange={(v) => apply({ producto: v })}
+                        options={[['', 'Cualquier producto'], ...Object.entries(products)]}
+                    />
+                    <FilterSelect
+                        label="Estrellas"
+                        value={filters.estrellas ? String(filters.estrellas) : ''}
+                        onChange={(v) => apply({ estrellas: v ? Number(v) : undefined })}
+                        options={[
+                            ['', 'Cualquier puntuación'],
+                            ['5', '5 estrellas'],
+                            ['4', '4 o más'],
+                            ['3', '3 o más'],
+                            ['2', '2 o más'],
                         ]}
                     />
                     <FilterSelect
@@ -167,7 +197,7 @@ export default function ContactsIndex() {
                     </div>
                 ) : (
                     <div className="overflow-x-auto rounded-xl border">
-                        <table className="w-full min-w-[1080px] text-sm">
+                        <table className="w-full min-w-[1280px] text-sm">
                             <thead className="bg-muted/50 text-muted-foreground text-left text-xs">
                                 <tr>
                                     {[
@@ -175,11 +205,13 @@ export default function ContactsIndex() {
                                         'Correo',
                                         'Teléfono',
                                         'Tipo',
+                                        'Producto preferido',
                                         'Ubicación',
                                         'Veces en la feria',
                                         'Años',
                                         'Última compra',
-                                        'Autorización',
+                                        'Estrellas',
+                                        'Estado',
                                     ].map((h) => (
                                         <th key={h} scope="col" className="px-4 py-3 font-medium whitespace-nowrap">
                                             {h}
@@ -205,11 +237,15 @@ export default function ContactsIndex() {
                                                 {c.is_subscriber && <Tag>Suscriptor</Tag>}
                                             </div>
                                         </td>
+                                        <td className="px-4 py-3">{c.products.length ? c.products.join(', ') : '—'}</td>
                                         <td className="text-muted-foreground px-4 py-3">{c.location ?? '—'}</td>
                                         <td className="px-4 py-3 text-center tabular-nums">{c.visits > 0 ? c.visits : '—'}</td>
                                         <td className="text-muted-foreground px-4 py-3 tabular-nums">{c.years.length ? c.years.join(', ') : '—'}</td>
                                         <td className="px-4 py-3 whitespace-nowrap tabular-nums">
                                             {c.last_purchase_at ? shortDate.format(new Date(c.last_purchase_at)) : '—'}
+                                        </td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <Stars value={c.stars} />
                                         </td>
                                         <td className={`px-4 py-3 ${STATUS[c.status].className}`}>{STATUS[c.status].label}</td>
                                     </tr>
