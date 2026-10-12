@@ -36,4 +36,31 @@ return [
         'site_key' => env('CRM_TURNSTILE_SITE_KEY'),
         'secret' => env('CRM_TURNSTILE_SECRET'),
     ],
+
+    /*
+     * Participant's QR as a wallet pass, offered in the QR email. Each wallet stays hidden until its keys are set.
+     *
+     * Apple Wallet: a Pass Type ID certificate (.p12) from developer.apple.com and Apple's WWDR G4 intermediate (.pem).
+     * Google Wallet: an issuer ID from pay.google.com/business/console and a service account key (.json) with access to it.
+     * Keep the key files outside public/, e.g. storage/app/private/wallet/.
+     */
+    'wallet' => [
+        'event_name' => env('CRM_WALLET_EVENT_NAME', 'Colombia Birdfair'),
+        'organization' => env('CRM_WALLET_ORGANIZATION', 'Colombia Birdfair'),
+        'background' => env('CRM_WALLET_BACKGROUND', '#2F5D2A'),
+
+        'apple' => [
+            'pass_type_id' => env('APPLE_WALLET_PASS_TYPE_ID'),
+            'team_id' => env('APPLE_WALLET_TEAM_ID'),
+            'certificate' => env('APPLE_WALLET_CERTIFICATE'),
+            'certificate_password' => env('APPLE_WALLET_CERTIFICATE_PASSWORD', ''),
+            'wwdr' => env('APPLE_WALLET_WWDR_CERTIFICATE'),
+        ],
+
+        'google' => [
+            'issuer_id' => env('GOOGLE_WALLET_ISSUER_ID'),
+            'service_account' => env('GOOGLE_WALLET_SERVICE_ACCOUNT'),
+            'class_suffix' => env('GOOGLE_WALLET_CLASS', 'colombia-birdfair'),
+        ],
+    ],
 ];

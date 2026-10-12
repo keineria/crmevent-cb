@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { day } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { CalendarDays, ListChecks, LoaderCircle, Search } from 'lucide-react';
+import { CalendarDays, CalendarPlus, Download, ListChecks, LoaderCircle, Search } from 'lucide-react';
 import { FormEventHandler, useEffect, useMemo, useRef, useState } from 'react';
 
 interface PortalActivity {
@@ -19,6 +19,7 @@ interface PortalActivity {
     date: string | null;
     start_time: string | null;
     checked_in: boolean;
+    google_calendar: string | null;
 }
 
 interface Person {
@@ -32,6 +33,7 @@ interface Person {
     qr_sent: boolean;
     orders: string[];
     activities: PortalActivity[];
+    calendar: { ics: string; google: string };
     days: string[];
 }
 
@@ -344,6 +346,8 @@ function Calendar({ person }: { person: Person }) {
 
     return (
         <section className="space-y-4">
+            <AddToCalendar calendar={person.calendar} />
+
             <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Días de la feria">
                 {days.map((d) => {
                     const has = person.activities.some((a) => a.date === d);
@@ -393,10 +397,45 @@ function Calendar({ person }: { person: Person }) {
                                     {a.checked_in ? ' · Ingresaste' : ''}
                                 </p>
                             </div>
+                            {a.google_calendar && (
+                                <Button asChild variant="ghost" size="icon" className="shrink-0 self-center" title="Agregar a Google Calendar">
+                                    <a
+                                        href={a.google_calendar}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={`Agregar ${a.name ?? 'actividad'} a Google Calendar`}
+                                    >
+                                        <CalendarPlus className="size-4" />
+                                    </a>
+                                </Button>
+                            )}
                         </li>
                     ))}
                 </ol>
             )}
         </section>
+    );
+}
+
+function AddToCalendar({ calendar }: { calendar: Person['calendar'] }) {
+    return (
+        <div className="bg-muted/40 space-y-2 rounded-xl border px-4 py-3">
+            <p className="text-sm font-medium">Lleva tus actividades a tu calendario</p>
+            <div className="flex flex-wrap gap-2">
+                <Button asChild size="sm">
+                    <a href={calendar.google} target="_blank" rel="noopener noreferrer">
+                        <CalendarPlus className="size-4" /> Google Calendar
+                    </a>
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                    <a href={calendar.ics}>
+                        <Download className="size-4" /> iPhone, Outlook y otros (.ics)
+                    </a>
+                </Button>
+            </div>
+            <p className="text-muted-foreground text-xs">
+                Si cambia una actividad, Google Calendar se actualiza solo (puede tardar unas horas). Con el archivo .ics, descárgalo de nuevo.
+            </p>
+        </div>
     );
 }
