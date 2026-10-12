@@ -6,6 +6,7 @@ use App\Models\RegistrationParticipant;
 use chillerlan\QRCode\Common\EccLevel;
 use chillerlan\QRCode\Output\QRGdImagePNG;
 use chillerlan\QRCode\Output\QRMarkupSVG;
+use chillerlan\QRCode\Output\QROutputInterface;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 
@@ -17,6 +18,8 @@ class CheckinQr
     public function png(RegistrationParticipant $participant, int $scale = 10): string
     {
         return (new QRCode(new QROptions([
+            // v5 only honours outputInterface with the CUSTOM type; without it the "PNG" comes out as SVG.
+            'outputType' => QROutputInterface::CUSTOM,
             'outputInterface' => QRGdImagePNG::class,
             'outputBase64' => false,
             'eccLevel' => EccLevel::M,
@@ -27,6 +30,7 @@ class CheckinQr
     public function svg(RegistrationParticipant $participant): string
     {
         return (new QRCode(new QROptions([
+            'outputType' => QROutputInterface::CUSTOM,
             'outputInterface' => QRMarkupSVG::class,
             'outputBase64' => false,
             'eccLevel' => EccLevel::M,
