@@ -22,9 +22,17 @@ export interface NavItem {
     isActive?: boolean;
 }
 
+/** Logo URLs from Configuración › Marca; login and email fall back to the platform logo. */
+export interface Branding {
+    platform: string | null;
+    login: string | null;
+    email: string | null;
+}
+
 export interface SharedData {
     name: string;
     auth: Auth;
+    branding?: Branding;
     [key: string]: unknown;
 }
 
