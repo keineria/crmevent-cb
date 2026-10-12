@@ -88,7 +88,7 @@ class BrandingTest extends TestCase
     public function test_campaign_emails_show_the_email_logo(): void
     {
         $mail = new CampaignMail(CampaignRenderer::sampleContact(), 'Hola', null, 'Texto');
-        $this->assertStringContainsString('Colombia Birdfair</span>', $mail->renderHtml());
+        $this->assertStringContainsString('letter-spacing:0.2px;">Colombia Birdfair</td>', $mail->renderHtml());
 
         $this->actingAs($this->admin)->post('/settings/branding/email', ['logo' => UploadedFile::fake()->image('mail.png')]);
 
