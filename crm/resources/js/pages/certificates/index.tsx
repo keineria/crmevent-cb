@@ -13,7 +13,7 @@ import AppLayout from '@/layouts/app-layout';
 import { day, money, number } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { Award, CheckCircle2, ChevronRight, Link2, Mail, Palette, Plus } from 'lucide-react';
+import { Award, CheckCircle2, ChevronRight, Link2, Mail, Palette, PenLine, Plus } from 'lucide-react';
 import { type FormEventHandler, useState } from 'react';
 
 interface CertificateRow {
@@ -242,6 +242,12 @@ export default function CertificatesIndex() {
                         description="Diseña una categoría, asóciala a talleres o conferencias y envía cada certificado cuando lo decidan. Nada sale sin pulsar Enviar."
                     />
                     <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" asChild>
+                            <Link href="/certificados/firmantes">
+                                <PenLine aria-hidden />
+                                Firmantes
+                            </Link>
+                        </Button>
                         <Button variant="outline" asChild>
                             <Link href="/certificados/correo">
                                 <Mail aria-hidden />

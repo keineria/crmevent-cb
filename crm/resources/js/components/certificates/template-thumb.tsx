@@ -56,6 +56,21 @@ export default function TemplateThumb({ template, primary, accent, className }: 
                     <g transform="translate(12 32)">{lines}</g>
                 </>
             )}
+            {template === 'propio' && (
+                <>
+                    <rect x="6" y="6" width="136" height="93" rx="3" fill="none" stroke="#C9C3B8" strokeWidth="1.2" strokeDasharray="4 3" />
+                    <path
+                        d="M58 46 l10 -10 l10 10 M68 36 v22"
+                        fill="none"
+                        stroke={primary}
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                    <rect x="44" y="68" width="60" height="5" rx="1.5" fill="#1C1A17" />
+                    <rect x="54" y="78" width="40" height="2" rx="1" fill={accent} />
+                </>
+            )}
         </svg>
     );
 }

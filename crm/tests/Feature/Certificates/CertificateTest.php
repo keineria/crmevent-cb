@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\Certificate;
 use App\Models\CertificateCategory;
 use App\Models\CertificateRecipient;
+use App\Models\CertificateSigner;
 use App\Models\CheckIn;
 use App\Models\EventActivity;
 use App\Models\MailSetting;
@@ -123,15 +124,19 @@ class CertificateTest extends TestCase
         $category = CertificateCategory::sole();
         $this->assertSame('selva', $category->template);
 
+        $ana = CertificateSigner::create(['name' => 'Ana Restrepo', 'role' => 'Directora']);
+        $luis = CertificateSigner::create(['name' => 'Luis Gil', 'role' => null]);
+
         $this->actingAs($admin)->put("/certificados/categorias/{$category->id}", [
             'name' => 'Talleres', 'activity_type' => 'workshop', 'template' => 'clasico', 'primary_color' => '#123456', 'accent_color' => '#ABCDEF',
             'heading' => 'Certificado', 'intro' => 'Otorgado a', 'body' => 'por asistir a {{actividad}}.', 'show_qr' => false,
-            'signatures' => [['name' => 'Ana Restrepo', 'role' => 'Directora'], ['name' => '', 'role' => '']],
+            'signer_ids' => [$luis->id, $ana->id],
         ])->assertSessionHasNoErrors();
 
         $category->refresh();
         $this->assertSame('clasico', $category->template);
-        $this->assertSame([['name' => 'Ana Restrepo', 'role' => 'Directora', 'image_path' => null]], $category->signers());
+        // In the order they were picked.
+        $this->assertSame(['Luis Gil', 'Ana Restrepo'], array_column($category->signers(), 'name'));
         $this->assertTrue(AuditLog::where('action', 'certificate.category_updated')->exists());
 
         $this->actingAs($admin)->put("/certificados/categorias/{$category->id}", ['template' => 'otro', 'primary_color' => 'rojo'])
@@ -143,7 +148,14 @@ class CertificateTest extends TestCase
         $admin = $this->staff();
         $category = $this->category();
 
-        foreach (['logo', 'fondo', 'firma-0'] as $kind) {
+        $this->actingAs($admin)->post('/certificados/firmantes', [
+            'name' => 'Ana Restrepo', 'role' => 'Directora', 'image' => UploadedFile::fake()->image('firma.png', 400, 120),
+        ])->assertSessionHasNoErrors();
+        $signer = CertificateSigner::sole();
+        $this->assertNotNull($signer->image_path);
+        $this->assertTrue(AuditLog::where('action', 'certificate.signer_created')->exists());
+
+        foreach (['logo', 'fondo'] as $kind) {
             $this->actingAs($admin)->post("/certificados/categorias/{$category->id}/archivo/{$kind}", [
                 'file' => UploadedFile::fake()->image("{$kind}.png", 600, 300),
             ])->assertSessionHasNoErrors();
@@ -154,14 +166,10 @@ class CertificateTest extends TestCase
         $category->refresh();
         $this->assertNotNull($category->logo_path);
         $this->assertNotNull($category->background_path);
-        $this->assertNotNull($category->signatures[0]['image_path']);
 
-        // Typing names keeps the uploaded signature.
         $this->actingAs($admin)->put("/certificados/categorias/{$category->id}", [
-            ...CertificateCategory::DEFAULTS, 'name' => 'Talleres', 'activity_type' => 'workshop',
-            'signatures' => [['name' => 'Ana', 'role' => 'Directora']],
+            ...CertificateCategory::DEFAULTS, 'name' => 'Talleres', 'activity_type' => 'workshop', 'signer_ids' => [$signer->id],
         ])->assertSessionHasNoErrors();
-        $this->assertNotNull($category->fresh()->signatures[0]['image_path']);
 
         $html = app(CertificatePdf::class)->html($category->fresh(), ['nombre' => 'Ana', 'documento' => '1', 'actividad' => 'X', 'edicion' => '2027'], 'CERT-AAAAAAAAAA');
         $this->assertSame(4, substr_count($html, 'data:image/png;base64')); // logo, background, signature and QR
@@ -174,6 +182,61 @@ class CertificateTest extends TestCase
 
         $this->actingAs($admin)->delete("/certificados/categorias/{$category->id}/archivo/logo");
         $this->assertNull($category->fresh()->logo_path);
+    }
+
+    public function test_own_design_places_each_block_where_it_was_dragged(): void
+    {
+        $admin = $this->staff();
+        $category = $this->category(['template' => 'propio']);
+        $signer = CertificateSigner::create(['name' => 'Ana Restrepo', 'role' => 'Directora']);
+        $this->actingAs($admin)->post("/certificados/categorias/{$category->id}/archivo/fondo", ['file' => UploadedFile::fake()->image('diseno.png', 1200, 848)]);
+
+        $this->actingAs($admin)->put("/certificados/categorias/{$category->id}", [
+            ...CertificateCategory::DEFAULTS, 'template' => 'propio', 'name' => 'Talleres', 'activity_type' => 'workshop', 'signer_ids' => [$signer->id],
+            'layout' => [
+                'name' => ['x' => 100, 'y' => 90.5, 'w' => 150, 'size' => 44, 'color' => '#AA0000', 'align' => 'right', 'font' => 'script', 'visible' => true],
+                'document' => ['visible' => false],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $category->refresh();
+        $layout = CertificateCategory::normalizeLayout($category->layout);
+        $this->assertSame(100, $layout['name']['x']);
+        $this->assertFalse($layout['document']['visible']);
+        // Blocks that were not sent keep their defaults.
+        $this->assertSame(CertificateCategory::DEFAULT_LAYOUT['qr'], $layout['qr']);
+
+        $html = app(CertificatePdf::class)->html($category, ['nombre' => 'Ana Pérez', 'documento' => '777', 'actividad' => 'Taller', 'edicion' => '2027'], 'CERT-AAAAAAAAAA');
+        $this->assertStringContainsString('left:100.0mm;top:90.5mm;width:150.0mm;font-size:44.0pt;color:#AA0000;text-align:right;font-family:\'Great Vibes\'', $html);
+        $this->assertStringNotContainsString('Documento 777', $html);
+        $this->assertStringContainsString('Ana Restrepo', $html);
+        $this->assertStringStartsWith('%PDF', app(CertificatePdf::class)->sample($category));
+
+        $this->actingAs($admin)->put("/certificados/categorias/{$category->id}", [
+            ...CertificateCategory::DEFAULTS, 'template' => 'propio', 'name' => 'Talleres', 'activity_type' => 'workshop',
+            'layout' => ['name' => ['color' => 'rojo', 'font' => 'comic']],
+        ])->assertSessionHasErrors(['layout.name.color', 'layout.name.font']);
+    }
+
+    public function test_signers_are_edited_and_removed_from_categories_when_deleted(): void
+    {
+        $admin = $this->staff();
+        $signer = CertificateSigner::create(['name' => 'Ana', 'role' => 'Directora']);
+        $category = $this->category(['signer_ids' => [$signer->id]]);
+
+        $this->actingAs($admin)->get('/certificados/firmantes')
+            ->assertInertia(fn (Assert $page) => $page->component('certificates/signers')->where('signers.0.categories', ['Talleres 2027']));
+
+        $this->actingAs($admin)->post("/certificados/firmantes/{$signer->id}", [
+            '_method' => 'put', 'name' => 'Ana Restrepo', 'role' => 'Directora general', 'image' => UploadedFile::fake()->image('f.jpg', 300, 100),
+        ])->assertSessionHasNoErrors();
+        $this->assertSame('Ana Restrepo', $signer->fresh()->name);
+        $this->assertNotNull($signer->fresh()->image_path);
+
+        $this->actingAs($admin)->delete("/certificados/firmantes/{$signer->id}")->assertSessionHas('success');
+        $this->assertSame([], $category->fresh()->signer_ids);
+        $this->assertSame(0, CertificateSigner::count());
+        $this->actingAs($this->staff(Roles::ANALYST))->get('/certificados/firmantes')->assertForbidden();
     }
 
     public function test_every_template_renders_a_pdf(): void

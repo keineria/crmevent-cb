@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Certificates;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\CertificateCategory;
+use App\Models\CertificateSigner;
 use App\Services\Certificates\CertificatePdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,8 +21,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class CertificateCategoryController extends Controller
 {
-    /** Images a category can carry: logo, a full-page design used as background, and one signature per signer. */
-    private const FILE_KINDS = ['logo', 'fondo', 'firma-0', 'firma-1'];
+    /** Images a category can carry: logo and a full-page design used as background (the whole certificate in "propio"). */
+    private const FILE_KINDS = ['logo', 'fondo'];
 
     private const DIRECTORY = 'certificates';
 
@@ -57,10 +58,8 @@ class CertificateCategoryController extends Controller
                 'intro' => $category->intro ?? '',
                 'body' => $category->body ?? '',
                 'show_qr' => $category->show_qr,
-                'signatures' => collect(range(0, CertificateCategory::MAX_SIGNATURES - 1))->map(fn (int $i) => [
-                    'name' => $category->signatures[$i]['name'] ?? '',
-                    'role' => $category->signatures[$i]['role'] ?? '',
-                ]),
+                'signer_ids' => array_values(array_map('intval', $category->signer_ids ?? [])),
+                'layout' => CertificateCategory::normalizeLayout($category->layout),
                 'files' => collect(self::FILE_KINDS)->mapWithKeys(fn (string $kind) => [
                     $kind => $this->path($category, $kind) ? route('certificates.categories.file', [$category, $kind, 'v' => substr(md5((string) $this->path($category, $kind)), 0, 8)]) : null,
                 ]),
@@ -70,21 +69,26 @@ class CertificateCategoryController extends Controller
             'templates' => CertificateCategory::TEMPLATES,
             'types' => CertificateCategory::ACTIVITY_TYPES,
             'fields' => CertificateCategory::FIELDS,
+            'blocks' => CertificateCategory::BLOCKS,
+            'fonts' => CertificateCategory::FONTS,
+            'maxSigners' => CertificateCategory::MAX_SIGNERS,
+            'signers' => CertificateSigner::orderBy('name')->get()->map(fn (CertificateSigner $s) => [
+                'id' => $s->id,
+                'name' => $s->name,
+                'role' => $s->role,
+                'image' => $s->image_path ? route('certificates.signers.image', [$s, 'v' => substr(md5($s->image_path), 0, 8)]) : null,
+            ]),
         ]);
     }
 
     public function update(Request $request, CertificateCategory $category): RedirectResponse
     {
-        $data = $request->validate(self::rules(), [], self::attributes());
+        $data = self::clean($request->validate(self::rules(), [], self::attributes()));
         $before = $category->only(array_keys($data));
 
-        $category->update([
-            ...collect($data)->except('signatures')->all(),
-            'signatures' => $this->signatures($category, $data['signatures'] ?? []),
-            'updated_by' => $request->user()->id,
-        ]);
+        $category->update([...$data, 'updated_by' => $request->user()->id]);
 
-        $changed = collect($data)->except('signatures')->filter(fn ($value, $key) => $before[$key] != $value)->keys()->all();
+        $changed = collect($data)->filter(fn ($value, $key) => $before[$key] != $value)->keys()->all();
         AuditLog::record('certificate.category_updated', $category, $changed ? ['campos' => $changed] : []);
 
         return back()->with('success', 'Diseño guardado. Los próximos certificados que se envíen o descarguen lo usan.');
@@ -107,8 +111,7 @@ class CertificateCategoryController extends Controller
      */
     public function preview(Request $request, CertificateCategory $category, CertificatePdf $pdf): HttpResponse
     {
-        $data = $request->validate(self::rules(), [], self::attributes());
-        $data['signatures'] = $this->signatures($category, $data['signatures'] ?? []);
+        $data = self::clean($request->validate(self::rules(), [], self::attributes()));
 
         return $this->inlinePdf($pdf->sample($category, null, $data), 'vista-previa.pdf');
     }
@@ -170,48 +173,32 @@ class CertificateCategoryController extends Controller
 
     private function path(CertificateCategory $category, string $kind): ?string
     {
-        return match ($kind) {
-            'logo' => $category->logo_path,
-            'fondo' => $category->background_path,
-            default => $category->signatures[(int) substr($kind, 6)]['image_path'] ?? null,
-        };
+        return $kind === 'logo' ? $category->logo_path : $category->background_path;
     }
 
     private function setPath(CertificateCategory $category, string $kind, ?string $path): void
     {
-        match ($kind) {
-            'logo' => $category->logo_path = $path,
-            'fondo' => $category->background_path = $path,
-            default => $category->signatures = $this->withSignatureImage($category, (int) substr($kind, 6), $path),
-        };
+        if ($kind === 'logo') {
+            $category->logo_path = $path;
+        } else {
+            $category->background_path = $path;
+        }
         $category->updated_by = auth()->id();
         $category->save();
     }
 
     /**
-     * @return list<array{name: string, role: string, image_path: string|null}>
-     */
-    private function withSignatureImage(CertificateCategory $category, int $index, ?string $path): array
-    {
-        $signatures = $this->signatures($category, $category->signatures ?? []);
-        $signatures[$index]['image_path'] = $path;
-
-        return $signatures;
-    }
-
-    /**
-     * Names and roles as typed, keeping each signer's uploaded signature image.
+     * Signer ids as integers without repeats, and the layout with every block.
      *
-     * @param  array<int, array<string, mixed>>  $typed
-     * @return list<array{name: string, role: string, image_path: string|null}>
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
      */
-    private function signatures(CertificateCategory $category, array $typed): array
+    private static function clean(array $data): array
     {
-        return array_map(fn (int $i) => [
-            'name' => trim((string) ($typed[$i]['name'] ?? '')),
-            'role' => trim((string) ($typed[$i]['role'] ?? '')),
-            'image_path' => $category->signatures[$i]['image_path'] ?? null,
-        ], range(0, CertificateCategory::MAX_SIGNATURES - 1));
+        $data['signer_ids'] = array_values(array_unique(array_map('intval', $data['signer_ids'] ?? [])));
+        $data['layout'] = CertificateCategory::normalizeLayout($data['layout'] ?? null);
+
+        return $data;
     }
 
     private function inlinePdf(string $pdf, string $name): HttpResponse
@@ -238,9 +225,17 @@ class CertificateCategoryController extends Controller
             'intro' => ['nullable', 'string', 'max:200'],
             'body' => ['nullable', 'string', 'max:600'],
             'show_qr' => ['required', 'boolean'],
-            'signatures' => ['array', 'max:'.CertificateCategory::MAX_SIGNATURES],
-            'signatures.*.name' => ['nullable', 'string', 'max:80'],
-            'signatures.*.role' => ['nullable', 'string', 'max:80'],
+            'signer_ids' => ['array', 'max:'.CertificateCategory::MAX_SIGNERS],
+            'signer_ids.*' => ['integer', 'exists:certificate_signers,id'],
+            'layout' => ['nullable', 'array'],
+            'layout.*.x' => ['numeric', 'min:-20', 'max:297'],
+            'layout.*.y' => ['numeric', 'min:-20', 'max:210'],
+            'layout.*.w' => ['numeric', 'min:10', 'max:297'],
+            'layout.*.size' => ['numeric', 'min:5', 'max:120'],
+            'layout.*.color' => ['regex:/^#[0-9A-Fa-f]{6}$/'],
+            'layout.*.align' => [Rule::in(['left', 'center', 'right'])],
+            'layout.*.font' => [Rule::in(array_keys(CertificateCategory::FONTS))],
+            'layout.*.visible' => ['boolean'],
         ];
     }
 
@@ -251,8 +246,8 @@ class CertificateCategoryController extends Controller
     {
         return [
             'name' => 'nombre', 'template' => 'diseño', 'primary_color' => 'color principal', 'accent_color' => 'color de acento',
-            'heading' => 'título', 'intro' => 'frase de entrada', 'body' => 'texto', 'signatures.*.name' => 'nombre de quien firma',
-            'signatures.*.role' => 'cargo',
+            'heading' => 'título', 'intro' => 'frase de entrada', 'body' => 'texto', 'signer_ids' => 'firmas',
+            'signer_ids.*' => 'firma', 'layout.*.color' => 'color', 'layout.*.size' => 'tamaño',
         ];
     }
 }

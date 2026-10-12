@@ -13,6 +13,16 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // People who sign certificates, kept once and picked in each category.
+        Schema::create('certificate_signers', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 80);
+            $table->string('role', 80)->nullable();
+            $table->string('image_path')->nullable();
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamps();
+        });
+
         Schema::create('certificate_categories', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -26,8 +36,10 @@ return new class extends Migration
             $table->text('body')->nullable();
             $table->string('logo_path')->nullable();
             $table->string('background_path')->nullable();
-            // Up to two signers: [{name, role, image_path}].
-            $table->json('signatures')->nullable();
+            // Ids of certificate_signers, in the order they are printed (up to three).
+            $table->json('signer_ids')->nullable();
+            // Only for the "propio" template: where each block goes on the uploaded design, in mm.
+            $table->json('layout')->nullable();
             $table->boolean('show_qr')->default(true);
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
@@ -99,5 +111,6 @@ return new class extends Migration
         Schema::dropIfExists('certificate_recipients');
         Schema::dropIfExists('certificates');
         Schema::dropIfExists('certificate_categories');
+        Schema::dropIfExists('certificate_signers');
     }
 };

@@ -6,6 +6,7 @@ use App\Models\Campaign;
 use App\Models\Certificate;
 use App\Models\CertificateCategory;
 use App\Models\CertificateRecipient;
+use App\Models\CertificateSigner;
 use App\Models\Contact;
 use App\Models\ContactImport;
 use App\Models\Expense;
@@ -83,6 +84,9 @@ final class AuditActions
         'certificate.category_updated' => ['certificates', 'Editó el diseño de una categoría de certificados'],
         'certificate.category_file' => ['certificates', 'Cambió una imagen de una categoría de certificados'],
         'certificate.category_deleted' => ['certificates', 'Borró una categoría de certificados'],
+        'certificate.signer_created' => ['certificates', 'Agregó un firmante de certificados'],
+        'certificate.signer_updated' => ['certificates', 'Editó un firmante de certificados'],
+        'certificate.signer_deleted' => ['certificates', 'Borró un firmante de certificados'],
         'certificate.created' => ['certificates', 'Asoció un certificado a una actividad'],
         'certificate.updated' => ['certificates', 'Editó un certificado'],
         'certificate.deleted' => ['certificates', 'Quitó un certificado de una actividad'],
@@ -139,6 +143,7 @@ final class AuditActions
             $subject instanceof RegistrationParticipant => trim("{$subject->full_name} · {$subject->document_number}", ' ·'),
             $subject instanceof Campaign, $subject instanceof MailTemplate => (string) $subject->name,
             $subject instanceof CertificateCategory => (string) $subject->name,
+            $subject instanceof CertificateSigner => trim("{$subject->name} · {$subject->role}", ' ·'),
             $subject instanceof Certificate => "{$subject->activity_name} · ".($subject->category?->name ?? ''),
             $subject instanceof CertificateRecipient => trim("{$subject->full_name} · {$subject->code}", ' ·'),
             $subject instanceof Expense => (string) $subject->concept,

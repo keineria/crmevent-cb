@@ -1,4 +1,5 @@
 import Flash from '@/components/campaigns/flash';
+import LayoutEditor, { type Layout } from '@/components/certificates/layout-editor';
 import TemplateThumb from '@/components/certificates/template-thumb';
 import { selectClass } from '@/components/finance/period-filter';
 import Heading from '@/components/heading';
@@ -12,11 +13,11 @@ import AppLayout from '@/layouts/app-layout';
 import { dateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Braces, ImageUp, LoaderCircle, Save, Trash2 } from 'lucide-react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { Braces, ImageUp, LoaderCircle, PenLine, Save, Trash2 } from 'lucide-react';
 import { type FormEventHandler, useEffect, useRef, useState } from 'react';
 
-type FileKind = 'logo' | 'fondo' | 'firma-0' | 'firma-1';
+type FileKind = 'logo' | 'fondo';
 
 interface Design {
     name: string;
@@ -28,7 +29,15 @@ interface Design {
     intro: string;
     body: string;
     show_qr: boolean;
-    signatures: { name: string; role: string }[];
+    signer_ids: number[];
+    layout: Layout;
+}
+
+interface Signer {
+    id: number;
+    name: string;
+    role: string | null;
+    image: string | null;
 }
 
 interface PageProps {
@@ -36,6 +45,10 @@ interface PageProps {
     templates: Record<string, { label: string; hint: string }>;
     types: Record<string, string>;
     fields: Record<string, string>;
+    blocks: Record<string, string>;
+    fonts: Record<string, string>;
+    maxSigners: number;
+    signers: Signer[];
     [key: string]: unknown;
 }
 
@@ -178,7 +191,7 @@ function usePreview(categoryId: number, design: Design, filesKey: string) {
 }
 
 export default function CategoryEditor() {
-    const { category, templates, types, fields } = usePage<PageProps>().props;
+    const { category, templates, types, fields, blocks, fonts, maxSigners, signers } = usePage<PageProps>().props;
     const bodyRef = useRef<HTMLTextAreaElement>(null);
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -196,7 +209,8 @@ export default function CategoryEditor() {
         intro: category.intro,
         body: category.body,
         show_qr: category.show_qr,
-        signatures: category.signatures,
+        signer_ids: category.signer_ids,
+        layout: category.layout,
     });
 
     const preview = usePreview(category.id, data, JSON.stringify(category.files));
@@ -221,11 +235,26 @@ export default function CategoryEditor() {
         });
     };
 
-    const setSigner = (i: number, key: 'name' | 'role', value: string) =>
-        setData(
-            'signatures',
-            data.signatures.map((s, j) => (j === i ? { ...s, [key]: value } : s)),
-        );
+    const toggleSigner = (id: number, on: boolean) =>
+        setData('signer_ids', on ? [...data.signer_ids, id].slice(0, maxSigners) : data.signer_ids.filter((x) => x !== id));
+    const chosenSigners = data.signer_ids.map((id) => signers.find((s) => s.id === id)).filter((s): s is Signer => !!s);
+    const own = data.template === 'propio';
+    const sample: Record<string, string> = {
+        nombre: 'María Pérez Gómez',
+        documento: '1.020.304.050',
+        actividad: data.activity_type === 'workshop' ? 'Taller de fotografía de aves' : 'Conferencias Colombia Birdfair',
+        categoria: data.name,
+        fecha: '30 de septiembre de 2027',
+        edicion: '2027',
+        horas: '8',
+    };
+    const sampleTexts: Record<string, string> = {
+        heading: data.heading,
+        intro: data.intro,
+        name: sample.nombre,
+        document: `Documento ${sample.documento}`,
+        body: data.body.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (m, k: string) => sample[k] ?? m),
+    };
 
     const destroy = () => {
         if (window.confirm(`¿Borrar la categoría ${category.name}? Se quitan también sus actividades asociadas que no se hayan enviado.`)) {
@@ -233,7 +262,7 @@ export default function CategoryEditor() {
         }
     };
 
-    const signatureErrors = errors as Record<string, string | undefined>;
+    const layoutErrors = Object.entries(errors as Record<string, string | undefined>).filter(([k]) => k.startsWith('layout.'));
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -336,14 +365,22 @@ export default function CategoryEditor() {
                                 kind="logo"
                                 url={category.files.logo}
                                 label="Logo"
-                                hint="PNG o JPG, máximo 2 MB. Con fondo transparente se ve mejor."
+                                hint={
+                                    own
+                                        ? 'En el diseño propio no se usa: el logo va dentro de tu imagen.'
+                                        : 'PNG o JPG, máximo 2 MB. Con fondo transparente se ve mejor.'
+                                }
                             />
                             <ImageField
                                 categoryId={category.id}
                                 kind="fondo"
                                 url={category.files.fondo}
-                                label="Diseño de fondo (opcional)"
-                                hint="Una imagen A4 horizontal hecha en Canva, Illustrator o Figma (3508 × 2480 px ideal), PNG o JPG hasta 6 MB. Reemplaza los adornos de la plantilla; el texto se escribe encima en el mismo lugar, así que deja ese espacio libre."
+                                label={own ? 'Diseño de fondo' : 'Diseño de fondo (opcional)'}
+                                hint={
+                                    own
+                                        ? 'Tu certificado completo sin los datos de cada persona: A4 horizontal (3508 × 2480 px ideal), PNG o JPG hasta 6 MB. Expórtalo como imagen desde Canva, Illustrator o Figma.'
+                                        : 'Una imagen A4 horizontal hecha en Canva, Illustrator o Figma (3508 × 2480 px ideal), PNG o JPG hasta 6 MB. Reemplaza los adornos de la plantilla; el texto se escribe encima en el mismo lugar, así que deja ese espacio libre.'
+                                }
                             />
                         </section>
 
@@ -400,31 +437,53 @@ export default function CategoryEditor() {
                             </label>
                         </section>
 
-                        <section className="grid gap-4 rounded-xl border p-4">
-                            <h2 className="font-medium">Firmas</h2>
-                            {data.signatures.map((s, i) => (
-                                <div key={i} className="grid gap-3 border-t pt-4 first:border-t-0 first:pt-0">
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                        <div className="grid gap-2">
-                                            <Label htmlFor={`sig-name-${i}`}>Nombre de quien firma {i + 1}</Label>
-                                            <Input id={`sig-name-${i}`} value={s.name} onChange={(e) => setSigner(i, 'name', e.target.value)} />
-                                            <InputError message={signatureErrors[`signatures.${i}.name`]} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <Label htmlFor={`sig-role-${i}`}>Cargo</Label>
-                                            <Input id={`sig-role-${i}`} value={s.role} onChange={(e) => setSigner(i, 'role', e.target.value)} />
-                                            <InputError message={signatureErrors[`signatures.${i}.role`]} />
-                                        </div>
+                        <section className="grid gap-3 rounded-xl border p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h2 className="font-medium">Firmas</h2>
+                                <Button type="button" variant="ghost" size="sm" asChild>
+                                    <Link href="/certificados/firmantes">
+                                        <PenLine className="size-4" aria-hidden />
+                                        Firmantes
+                                    </Link>
+                                </Button>
+                            </div>
+                            {signers.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">
+                                    Aún no hay firmantes.{' '}
+                                    <Link href="/certificados/firmantes" className="text-primary underline">
+                                        Agrégalos con su firma
+                                    </Link>{' '}
+                                    y luego elígelos aquí.
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="text-muted-foreground text-xs">Elige hasta {maxSigners}. Salen en el orden en que los marques.</p>
+                                    <div className="grid gap-1">
+                                        {signers.map((signer) => {
+                                            const position = data.signer_ids.indexOf(signer.id);
+                                            return (
+                                                <label
+                                                    key={signer.id}
+                                                    className="hover:bg-muted/40 flex cursor-pointer items-center gap-3 rounded-md p-2 text-sm"
+                                                >
+                                                    <Checkbox
+                                                        checked={position >= 0}
+                                                        disabled={position < 0 && data.signer_ids.length >= maxSigners}
+                                                        onCheckedChange={(v) => toggleSigner(signer.id, v === true)}
+                                                    />
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="font-medium">{signer.name}</span>
+                                                        {signer.role && <span className="text-muted-foreground block text-xs">{signer.role}</span>}
+                                                    </span>
+                                                    {signer.image && <img src={signer.image} alt="" className="h-8 max-w-24 object-contain" />}
+                                                    {position >= 0 && <span className="text-muted-foreground text-xs">{position + 1}.º</span>}
+                                                </label>
+                                            );
+                                        })}
                                     </div>
-                                    <ImageField
-                                        categoryId={category.id}
-                                        kind={`firma-${i}` as FileKind}
-                                        url={category.files[`firma-${i}` as FileKind]}
-                                        label="Imagen de la firma (opcional)"
-                                        hint="PNG con fondo transparente, máximo 2 MB. Sin nombre no se muestra."
-                                    />
-                                </div>
-                            ))}
+                                </>
+                            )}
+                            <InputError message={errors.signer_ids} />
                         </section>
                     </div>
 
@@ -453,6 +512,32 @@ export default function CategoryEditor() {
                         )}
                     </section>
                 </div>
+
+                {own && (
+                    <section className="grid gap-3 rounded-xl border p-4">
+                        <div>
+                            <h2 className="font-medium">Ubicar los textos sobre tu diseño</h2>
+                            <p className="text-muted-foreground text-sm">
+                                Tu imagen es todo el certificado. Coloca el nombre, el texto, las firmas y el QR donde tu diseño dejó el espacio.
+                            </p>
+                        </div>
+                        {!category.files.fondo && (
+                            <p className="border-warning/40 bg-warning/10 rounded-lg border p-3 text-sm">
+                                Falta tu diseño: súbelo en «Diseño de fondo» (A4 horizontal, PNG o JPG).
+                            </p>
+                        )}
+                        <LayoutEditor
+                            layout={data.layout}
+                            onChange={(layout) => setData('layout', layout)}
+                            background={category.files.fondo}
+                            blocks={blocks}
+                            fonts={fonts}
+                            texts={sampleTexts}
+                            signers={chosenSigners}
+                        />
+                        {layoutErrors.length > 0 && <InputError message={layoutErrors[0][1]} />}
+                    </section>
+                )}
             </form>
         </AppLayout>
     );

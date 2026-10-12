@@ -3,6 +3,7 @@
 use App\Http\Controllers\Certificates\CertificateCategoryController;
 use App\Http\Controllers\Certificates\CertificateController;
 use App\Http\Controllers\Certificates\CertificateMailController;
+use App\Http\Controllers\Certificates\CertificateSignerController;
 use App\Http\Controllers\Certificates\CertificateVerificationController;
 use App\Support\Roles;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,22 @@ Route::middleware(['auth', Roles::middleware(Roles::CERTIFICATE_MANAGERS)])->pre
         Route::post('archivo/{kind}', [CertificateCategoryController::class, 'upload'])->name('upload');
         Route::delete('archivo/{kind}', [CertificateCategoryController::class, 'removeFile'])->name('remove');
     });
+
+    Route::get('firmantes', [CertificateSignerController::class, 'index'])->name('signers.index');
+    Route::post('firmantes', [CertificateSignerController::class, 'store'])->name('signers.store');
+    Route::whereNumber('signer')->prefix('firmantes/{signer}')->name('signers.')->group(function () {
+        // POST with _method=PUT from the form, so the signature image can travel with it.
+        Route::put('/', [CertificateSignerController::class, 'update'])->name('update');
+        Route::delete('/', [CertificateSignerController::class, 'destroy'])->name('destroy');
+        Route::get('firma', [CertificateSignerController::class, 'image'])->name('image');
+    });
+
+    // The certificate fonts, so the layout editor shows the same letters as the PDF.
+    Route::get('fuentes/{font}', function (string $font) {
+        abort_unless(in_array($font, ['PlayfairDisplay-Regular.ttf', 'PlayfairDisplay-Bold.ttf', 'PlayfairDisplay-Italic.ttf', 'Inter-Regular.ttf', 'Inter-SemiBold.ttf', 'GreatVibes-Regular.ttf'], true), 404);
+
+        return response()->file(resource_path("fonts/certificates/{$font}"), ['Content-Type' => 'font/ttf', 'Cache-Control' => 'private, max-age=31536000, immutable']);
+    })->name('fonts');
 
     Route::get('correo', [CertificateMailController::class, 'edit'])->name('mail.edit');
     Route::put('correo', [CertificateMailController::class, 'update'])->name('mail.update');

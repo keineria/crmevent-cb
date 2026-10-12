@@ -40,11 +40,8 @@ class CertificatePdf
     {
         if ($draft) {
             $category = (clone $category)->forceFill(array_intersect_key($draft, array_flip([
-                'name', 'template', 'primary_color', 'accent_color', 'heading', 'intro', 'body', 'show_qr',
+                'name', 'template', 'primary_color', 'accent_color', 'heading', 'intro', 'body', 'show_qr', 'signer_ids', 'layout',
             ])));
-            if (array_key_exists('signatures', $draft)) {
-                $category->signatures = $draft['signatures'];
-            }
         }
 
         $values = $certificate
@@ -108,6 +105,7 @@ class CertificatePdf
             'logo' => $this->image($category->logo_path),
             'background' => $this->image($category->background_path),
             'signers' => array_map(fn (array $s) => [...$s, 'image' => $this->image($s['image_path'])], $category->signers()),
+            'layout' => CertificateCategory::normalizeLayout($category->layout),
             'qr' => $category->show_qr ? $this->qr(route('certificates.verify', $code)) : null,
             'code' => $code,
             'verifyHost' => parse_url(url('/'), PHP_URL_HOST),

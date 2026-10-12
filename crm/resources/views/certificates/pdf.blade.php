@@ -1,12 +1,21 @@
 @php
     // A4 landscape, measured in mm. Every block is placed absolutely: dompdf has no flexbox or grid.
     $decor = $background === null;
-    $layout = [
+    $frame = [
         'selva' => ['content' => 'left:98mm;top:34mm;width:178mm;', 'align' => 'left', 'signers' => 'left:98mm;top:160mm;width:178mm;', 'logo' => null],
         'minimal' => ['content' => 'left:24mm;top:56mm;width:200mm;', 'align' => 'left', 'signers' => 'left:24mm;top:160mm;width:200mm;', 'logo' => 'left:24mm;top:20mm;width:120mm;text-align:left;'],
         'clasico' => ['content' => 'left:30mm;top:52mm;width:237mm;', 'align' => 'center', 'signers' => 'left:60mm;top:158mm;width:177mm;', 'logo' => 'left:30mm;top:20mm;width:237mm;text-align:center;'],
         'geometrico' => ['content' => 'left:24mm;top:56mm;width:190mm;', 'align' => 'left', 'signers' => 'left:24mm;top:160mm;width:190mm;', 'logo' => 'left:24mm;top:20mm;width:120mm;text-align:left;'],
-    ][$template];
+    ][$template] ?? null;
+    $families = ['serif' => "'Playfair Display'", 'sans' => "'Inter'", 'script' => "'Great Vibes'"];
+    // Inline style of a block of the "propio" template, from its saved position and look.
+    $place = function (array $b) use ($families) {
+        $color = preg_match('/^#[0-9A-Fa-f]{6}$/', (string) ($b['color'] ?? '')) ? $b['color'] : '#1C1A17';
+        $align = in_array($b['align'] ?? '', ['left', 'center', 'right'], true) ? $b['align'] : 'left';
+
+        return sprintf('left:%.1fmm;top:%.1fmm;width:%.1fmm;font-size:%.1fpt;color:%s;text-align:%s;font-family:%s;',
+            (float) $b['x'], (float) $b['y'], (float) $b['w'], (float) $b['size'], $color, $align, $families[$b['font'] ?? 'sans'] ?? "'Inter'");
+    };
     $nameFont = $template === 'clasico' ? "font-family:'Great Vibes';font-size:50pt;line-height:1.15;color:{$primary};" : "font-family:'Playfair Display';font-weight:bold;font-size:38pt;line-height:1.1;";
 @endphp
 <!DOCTYPE html>
@@ -44,6 +53,53 @@
     <img class="abs" src="{{ $background }}" style="left:0;top:0;width:297mm;height:210mm;" alt="">
 @endif
 
+@if ($template === 'propio')
+    {{-- The uploaded design is the certificate: only the data is drawn, where it was placed. --}}
+    @php $L = $layout; @endphp
+    @if ($L['heading']['visible'] && $heading !== '')
+        <p class="abs" style="{!! $place($L['heading']) !!}margin:0;letter-spacing:3pt;text-transform:uppercase;font-weight:bold;">{{ $heading }}</p>
+    @endif
+    @if ($L['intro']['visible'] && $intro !== '')
+        <p class="abs" style="{!! $place($L['intro']) !!}margin:0;{{ $L['intro']['font'] === 'serif' ? 'font-style:italic;' : '' }}">{{ $intro }}</p>
+    @endif
+    @if ($L['name']['visible'])
+        <p class="abs" style="{!! $place($L['name']) !!}margin:0;line-height:1.15;{{ $L['name']['font'] !== 'script' ? 'font-weight:bold;' : '' }}">{{ $name }}</p>
+    @endif
+    @if ($L['document']['visible'] && $document)
+        <p class="abs" style="{!! $place($L['document']) !!}margin:0;letter-spacing:0.5pt;">Documento {{ $document }}</p>
+    @endif
+    @if ($L['body']['visible'])
+        <p class="abs" style="{!! $place($L['body']) !!}margin:0;line-height:1.55;">{!! $body !!}</p>
+    @endif
+    @if ($L['signers']['visible'] && $signers)
+        @php $col = (float) $L['signers']['w'] / count($signers); @endphp
+        <div class="abs" style="{!! $place($L['signers']) !!}">
+            <table cellpadding="0" cellspacing="0" style="width:100%;"><tr>
+                @foreach ($signers as $signer)
+                    <td style="width:{{ $col }}mm;vertical-align:bottom;padding:0 4mm;text-align:{{ $L['signers']['align'] }};">
+                        @if ($signer['image'])
+                            <img class="sig-img" src="{{ $signer['image'] }}" alt="">
+                        @else
+                            <div style="height:16mm;"></div>
+                        @endif
+                        <div style="border-top:0.3mm solid {{ $L['signers']['color'] }};padding-top:2mm;">
+                            <p style="margin:0;font-weight:bold;">{{ $signer['name'] }}</p>
+                            @if ($signer['role'])
+                                <p style="margin:0.5mm 0 0;font-size:0.85em;opacity:0.8;">{{ $signer['role'] }}</p>
+                            @endif
+                        </div>
+                    </td>
+                @endforeach
+            </tr></table>
+        </div>
+    @endif
+    @if ($L['qr']['visible'] && $qr)
+        <div class="abs" style="left:{{ (float) $L['qr']['x'] }}mm;top:{{ (float) $L['qr']['y'] }}mm;width:{{ (float) $L['qr']['size'] + 10 }}mm;text-align:center;">
+            <div class="qr-box" style="display:inline-block;"><img src="{{ $qr }}" style="width:{{ (float) $L['qr']['size'] }}mm;height:{{ (float) $L['qr']['size'] }}mm;" alt=""></div>
+            <div class="verify">{{ $code }}</div>
+        </div>
+    @endif
+@else
 {{-- Decoration of each layout. A design image uploaded as background replaces it. --}}
 @if ($template === 'selva')
     @if ($decor)
@@ -97,11 +153,11 @@
     @endif
 @endif
 
-@if ($layout['logo'] && $logo)
-    <div class="abs" style="{{ $layout['logo'] }}"><img src="{{ $logo }}" style="max-height:22mm;max-width:70mm;" alt=""></div>
+@if ($frame['logo'] && $logo)
+    <div class="abs" style="{{ $frame['logo'] }}"><img src="{{ $logo }}" style="max-height:22mm;max-width:70mm;" alt=""></div>
 @endif
 
-<div class="abs" style="{{ $layout['content'] }}text-align:{{ $layout['align'] }};">
+<div class="abs" style="{{ $frame['content'] }}text-align:{{ $frame['align'] }};">
     <p class="heading" style="color:{{ $template === 'selva' || $template === 'geometrico' ? $accent : $primary }};">{{ $heading }}</p>
     @if ($intro !== '')
         <p class="intro">{{ $intro }}</p>
@@ -112,15 +168,15 @@
     @if ($document)
         <p class="doc">Documento {{ $document }}</p>
     @endif
-    <div class="rule" style="background:{{ $accent }};{{ $layout['align'] === 'center' ? 'margin-left:auto;margin-right:auto;' : '' }}"></div>
+    <div class="rule" style="background:{{ $accent }};{{ $frame['align'] === 'center' ? 'margin-left:auto;margin-right:auto;' : '' }}"></div>
     <p class="body">{!! $body !!}</p>
 </div>
 
 @if ($signers)
-    <div class="abs" style="{{ $layout['signers'] }}">
-        <table class="signers" cellpadding="0" cellspacing="0" style="{{ $layout['align'] === 'center' ? 'margin:0 auto;' : '' }}"><tr>
+    <div class="abs" style="{{ $frame['signers'] }}">
+        <table class="signers" cellpadding="0" cellspacing="0" style="{{ $frame['align'] === 'center' ? 'margin:0 auto;' : '' }}"><tr>
             @foreach ($signers as $signer)
-                <td style="width:62mm;{{ $layout['align'] === 'center' ? 'text-align:center;padding:0 5mm;' : '' }}">
+                <td style="width:62mm;{{ $frame['align'] === 'center' ? 'text-align:center;padding:0 5mm;' : '' }}">
                     @if ($signer['image'])
                         <img class="sig-img" src="{{ $signer['image'] }}" alt="">
                     @else
@@ -146,6 +202,7 @@
         <div class="qr-box" style="display:inline-block;"><img src="{{ $qr }}" style="width:22mm;height:22mm;" alt=""></div>
         <div class="verify">Verifica en {{ $verifyHost }}<br><strong>{{ $code }}</strong></div>
     </div>
+@endif
 @endif
 </body>
 </html>
