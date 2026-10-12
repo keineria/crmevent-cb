@@ -4,6 +4,7 @@ namespace App\Http\Controllers\CheckIn;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SendCheckinQr;
+use App\Models\AuditLog;
 use App\Models\CheckIn;
 use App\Models\EventActivity;
 use App\Models\Registration;
@@ -171,6 +172,7 @@ class CheckInController extends Controller
         }
 
         SendCheckinQr::dispatch($participant, resend: true);
+        AuditLog::record('checkin.qr_sent', $participant, ['correo' => $participant->qrEmail()]);
 
         return back()->with('success', "Enviando el QR a {$participant->qrEmail()}.");
     }
@@ -202,6 +204,7 @@ class CheckInController extends Controller
         }
 
         $hours = (int) ceil($count / $perHour);
+        AuditLog::record('checkin.qr_bulk', null, ['correos' => $count]);
 
         return back()->with('success', "Enviando {$count} códigos QR, {$perHour} por hora".($hours > 1 ? " (unas {$hours} horas en total)." : '.'));
     }

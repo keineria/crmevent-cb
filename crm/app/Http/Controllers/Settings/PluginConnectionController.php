@@ -75,8 +75,11 @@ class PluginConnectionController extends Controller
         try {
             $ping = EvrClient::for(PluginConnection::current())->ping();
         } catch (Throwable $e) {
+            AuditLog::record('plugin-connection.tested', PluginConnection::current(), ['resultado' => 'error']);
+
             return back()->with('error', $e->getMessage());
         }
+        AuditLog::record('plugin-connection.tested', PluginConnection::current(), ['resultado' => ($ping['evr_active'] ?? false) && ($ping['woocommerce'] ?? false) ? 'correcto' : 'plugin inactivo']);
 
         if (! ($ping['evr_active'] ?? false) || ! ($ping['woocommerce'] ?? false)) {
             return back()->with('error', 'El sitio responde, pero EVR o WooCommerce no están activos.');
@@ -98,6 +101,7 @@ class PluginConnectionController extends Controller
         }
 
         SyncPluginRegistrations::dispatch();
+        AuditLog::record('plugin-connection.synced', $connection, $request->boolean('from_start') ? ['desde_el_inicio' => true] : []);
 
         return back()->with('success', 'Sincronización en curso. Las inscripciones aparecerán en unos minutos.');
     }

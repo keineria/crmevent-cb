@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\CheckIn;
 use App\Models\EventActivity;
 use App\Models\MailSetting;
+use App\Models\MailTemplate;
 use App\Models\Registration;
 use App\Models\RegistrationActivity;
 use App\Models\RegistrationParticipant;
@@ -235,7 +236,7 @@ class CheckInTest extends TestCase
         $this->actingAs($this->staff(Roles::REGISTRATION_ADMIN))->from('/checkin')->delete("/checkin/{$checkIn->id}")->assertSessionHas('success');
 
         $this->assertSame(0, CheckIn::count());
-        $this->assertSame('checkin.undone', AuditLog::sole()->action);
+        $this->assertSame(['checkin.created', 'checkin.undone'], AuditLog::orderBy('id')->pluck('action')->all());
     }
 
     public function test_qr_image_and_bulk_send_are_paced_and_not_repeated(): void
@@ -247,7 +248,8 @@ class CheckInTest extends TestCase
         $this->participant('Sin pagar', '999', [['Conferencias', 'conference']], 'pending');
         config(['crm.qr_emails_per_hour' => 60]);
 
-        $this->actingAs($this->staff(Roles::REGISTRATION))->get("/checkin/qr/{$ana->id}")->assertOk()->assertHeader('Content-Type', 'image/png');
+        $png = $this->actingAs($this->staff(Roles::REGISTRATION))->get("/checkin/qr/{$ana->id}")->assertOk()->assertHeader('Content-Type', 'image/png');
+        $this->assertStringStartsWith("\x89PNG", $png->getContent());
         $this->post('/checkin/qr-pending')->assertForbidden();
 
         $this->actingAs($this->staff(Roles::REGISTRATION_ADMIN))->from('/checkin')->post('/checkin/qr-pending')
@@ -284,6 +286,53 @@ class CheckInTest extends TestCase
 
         $this->assertStringContainsString($p->checkin_code, $html);
         $this->assertStringContainsString('Conferencias', $html);
+    }
+
+    public function test_qr_mail_follows_the_saved_template(): void
+    {
+        $p = $this->participant('Ana <b>Pérez</b>', '1020304', [['Conferencias', 'conference']]);
+        MailTemplate::system(MailTemplate::CHECKIN_QR)->update([
+            'subject' => 'Tu ingreso, {{nombre}}',
+            'body' => "Hola {{nombre_completo}}, tu código es {{codigo}}.\n\n{{actividades}}\n\nNos vemos.",
+        ]);
+
+        $mail = new CheckinQrMail($p);
+        $html = $mail->render();
+
+        $this->assertSame('Tu ingreso, Ana', $mail->renderedSubject());
+        $this->assertStringContainsString('Hola Ana &lt;b&gt;Pérez&lt;/b&gt;', $html);
+        $this->assertStringContainsString("tu código es {$p->checkin_code}", $html);
+        $this->assertStringContainsString('Conferencias', $html);
+        // The template dropped {{qr}}, so the QR still goes in, as an inline image.
+        $this->assertStringContainsString('src="data:image/png;base64,', $html);
+        $this->assertStringNotContainsString('@@', $html);
+    }
+
+    public function test_qr_mail_editor(): void
+    {
+        $this->actingAs($this->staff(Roles::REGISTRATION))->get('/checkin/correo-qr')->assertForbidden();
+
+        $marketing = $this->staff(Roles::MARKETING);
+        $this->actingAs($marketing)->get('/checkin/correo-qr')
+            ->assertInertia(fn (Assert $page) => $page->component('checkin/qr-mail')->where('template.name', 'Correo del código QR'));
+
+        $this->postJson('/checkin/correo-qr/vista-previa', ['subject' => 'Hola {{nombre}}', 'body' => "Prueba {{codigo}}\n\n{{qr}}"])
+            ->assertOk()
+            ->assertJsonPath('subject', 'Hola María')
+            ->assertJson(fn ($json) => $json->where('html', fn (string $html) => str_contains($html, 'Prueba CBF-MPZ7K2QH') && str_contains($html, 'data:image/png'))->etc());
+
+        $this->from('/checkin/correo-qr')->put('/checkin/correo-qr', ['subject' => 'Nuevo asunto', 'preheader' => '', 'body' => '{{qr}}'])
+            ->assertSessionHas('success');
+        $template = MailTemplate::system(MailTemplate::CHECKIN_QR);
+        $this->assertSame('Nuevo asunto', $template->subject);
+        $this->assertSame($marketing->id, $template->updated_by);
+
+        // It is not one of the campaign templates.
+        $this->get('/campaigns/templates')->assertInertia(fn (Assert $page) => $page
+            ->where('templates', fn ($templates) => collect($templates)->pluck('id')->doesntContain($template->id))
+            ->where('canEditQrMail', true));
+        $this->get("/campaigns/templates/{$template->id}/edit")->assertNotFound();
+        $this->delete("/campaigns/templates/{$template->id}")->assertNotFound();
     }
 
     public function test_admin_manages_staff_accounts(): void

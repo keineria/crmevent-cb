@@ -10,8 +10,8 @@ import AppLayout from '@/layouts/app-layout';
 import { day, number } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, usePage } from '@inertiajs/react';
-import { CircleCheck, CircleX, Mail, ScanLine, Search, Undo2 } from 'lucide-react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { CircleCheck, CircleX, Mail, PencilLine, ScanLine, Search, Undo2 } from 'lucide-react';
 import { FormEventHandler, useCallback, useEffect, useRef, useState } from 'react';
 
 interface DayActivity {
@@ -349,18 +349,26 @@ export default function CheckInPage() {
                             {number.format(qr.sent)} enviados, {number.format(qr.queued)} en cola y {number.format(qr.pending)} por enviar a quienes
                             tienen actividades próximas. Se envían {qr.per_hour} por hora para no superar el límite del correo.
                         </p>
-                        <Button
-                            variant="outline"
-                            disabled={qr.pending === 0}
-                            onClick={() => {
-                                if (confirm(`¿Enviar el código QR por correo a ${qr.pending} personas?`)) {
-                                    router.post('/checkin/qr-pending', {}, { preserveScroll: true });
-                                }
-                            }}
-                        >
-                            <Mail aria-hidden />
-                            Enviar QR pendientes
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant="outline"
+                                disabled={qr.pending === 0}
+                                onClick={() => {
+                                    if (confirm(`¿Enviar el código QR por correo a ${qr.pending} personas?`)) {
+                                        router.post('/checkin/qr-pending', {}, { preserveScroll: true });
+                                    }
+                                }}
+                            >
+                                <Mail aria-hidden />
+                                Enviar QR pendientes
+                            </Button>
+                            <Button variant="ghost" asChild>
+                                <Link href="/checkin/correo-qr">
+                                    <PencilLine aria-hidden />
+                                    Editar el correo del QR
+                                </Link>
+                            </Button>
+                        </div>
                     </section>
                 )}
             </div>

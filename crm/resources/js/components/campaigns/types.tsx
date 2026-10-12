@@ -28,6 +28,9 @@ export interface Segment {
     no_compro?: number;
     actividades?: number[];
     pais?: string;
+    productos?: string[];
+    min_estrellas?: number;
+    usuario?: string;
 }
 
 export interface Content {

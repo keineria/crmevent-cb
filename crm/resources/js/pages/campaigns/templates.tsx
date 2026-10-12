@@ -5,9 +5,10 @@ import AppLayout from '@/layouts/app-layout';
 import { dateTime } from '@/lib/format';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { LayoutTemplate, Plus } from 'lucide-react';
+import { LayoutTemplate, Plus, QrCode } from 'lucide-react';
 
 interface PageProps {
+    canEditQrMail: boolean;
     templates: { id: number; name: string; subject: string; preheader: string | null; updated_at: string }[];
     [key: string]: unknown;
 }
@@ -18,7 +19,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function Templates() {
-    const { templates } = usePage<PageProps>().props;
+    const { templates, canEditQrMail } = usePage<PageProps>().props;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -37,6 +38,17 @@ export default function Templates() {
                 </div>
 
                 <Flash />
+
+                {canEditQrMail && (
+                    <Link
+                        href="/checkin/correo-qr"
+                        className="hover:bg-muted/40 focus-visible:ring-ring flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-dashed p-4 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-hidden"
+                    >
+                        <QrCode className="text-primary h-4 w-4" aria-hidden />
+                        <span className="font-medium">Correo del código QR</span>
+                        <span className="text-muted-foreground">Se envía solo a cada inscrito con su código de ingreso. Edítalo aquí.</span>
+                    </Link>
+                )}
 
                 {templates.length === 0 ? (
                     <div className="text-muted-foreground rounded-xl border border-dashed p-10 text-center text-sm">Aún no hay plantillas.</div>

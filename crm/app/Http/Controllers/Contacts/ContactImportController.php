@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ImportContacts;
 use App\Models\AuditLog;
 use App\Models\ContactImport;
+use App\Services\Contacts\ContactTemplate;
 use App\Services\Contacts\ImportFields;
 use App\Services\Contacts\SpreadsheetReader;
 use Illuminate\Http\RedirectResponse;
@@ -16,6 +17,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 class ContactImportController extends Controller
@@ -47,7 +49,6 @@ class ContactImportController extends Controller
             'file' => ['required', 'file', 'max:20480', 'extensions:'.implode(',', SpreadsheetReader::EXTENSIONS)],
             'kind' => ['required', Rule::in(ContactImport::KINDS)],
             'edition_year' => ['nullable', 'integer', 'between:2000,2100'],
-            'has_consent' => ['boolean'],
         ], [], ['file' => 'archivo', 'kind' => 'tipo', 'edition_year' => 'año de la feria']);
 
         $file = $data['file'];
@@ -88,14 +89,23 @@ class ContactImportController extends Controller
             'path' => $path,
             'kind' => $data['kind'],
             'edition_year' => $data['edition_year'] ?? null,
-            'has_consent' => $data['has_consent'] ?? false,
+            // Everyone in our lists accepted the privacy policy; a "Desinscrito" column still unsubscribes them.
+            'has_consent' => true,
             'headers' => $headers,
             'sample' => $sample,
             'mapping' => ImportFields::guess($headers),
             'total_rows' => $total,
         ]);
+        AuditLog::record('contacts.uploaded', $import, ['filas' => $total, 'tipo' => $import->kind]);
 
         return to_route('contacts.import.show', $import);
+    }
+
+    public function template(ContactTemplate $template): BinaryFileResponse
+    {
+        AuditLog::record('contacts.template');
+
+        return response()->download($template->write(), ContactTemplate::FILE_NAME)->deleteFileAfterSend();
     }
 
     public function show(ContactImport $import): Response

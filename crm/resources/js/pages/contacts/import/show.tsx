@@ -14,7 +14,6 @@ interface ImportData {
     name: string;
     kind: 'asistente' | 'interesado';
     edition_year: number | null;
-    has_consent: boolean;
     headers: string[];
     sample: string[][];
     mapping: (string | null)[];
@@ -61,7 +60,7 @@ export default function ImportShow() {
             <div className="flex min-w-0 flex-1 flex-col gap-6 p-4 md:p-6">
                 <Heading
                     title={imp.status === 'mapping' ? 'Asigna las columnas' : imp.name}
-                    description={`${imp.kind === 'asistente' ? 'Asistentes' : 'Interesados'}${imp.edition_year ? ` ${imp.edition_year}` : ''} · ${number.format(imp.total_rows)} filas · ${imp.has_consent ? 'con autorización para boletines' : 'sin autorización para boletines'}`}
+                    description={`${imp.kind === 'asistente' ? 'Asistentes' : 'Interesados'}${imp.edition_year ? ` ${imp.edition_year}` : ''} · ${number.format(imp.total_rows)} filas`}
                 />
 
                 {imp.status === 'mapping' ? <MappingForm imp={imp} fields={fields} /> : <Progress imp={imp} running={running} />}

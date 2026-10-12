@@ -5,6 +5,7 @@ namespace Tests\Feature\Contacts;
 use App\Models\Contact;
 use App\Models\ContactImport;
 use App\Models\User;
+use App\Services\Contacts\ImportFields;
 use App\Support\Roles;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -126,15 +127,58 @@ class ContactImportTest extends TestCase
         $this->assertSame(0, Contact::mailable()->count());
     }
 
-    public function test_import_without_consent_does_not_allow_broadcasts(): void
+    public function test_imported_people_are_active_unless_the_file_marks_them_unsubscribed(): void
     {
-        $import = $this->upload($this->csv([['Correo'], ['a@example.com']]), ['has_consent' => false, 'kind' => 'interesado']);
+        $import = $this->upload($this->csv([
+            ['Correo', 'Estado (Activo/Desinscrito)'],
+            ['a@example.com', ''],
+            ['b@example.com', 'Desinscrito'],
+        ]), ['kind' => 'interesado']);
         $this->runImport($import);
 
-        $contact = Contact::sole();
-        $this->assertTrue($contact->is_interested);
-        $this->assertFalse($contact->is_attendee);
-        $this->assertFalse($contact->marketing_consent);
+        $active = Contact::where('email', 'a@example.com')->sole();
+        $this->assertTrue($active->is_interested);
+        $this->assertFalse($active->is_attendee);
+        $this->assertSame(Contact::STATUS_ACTIVE, $active->status());
+        $this->assertTrue($active->marketing_consent);
+
+        $gone = Contact::where('email', 'b@example.com')->sole();
+        $this->assertSame(Contact::STATUS_UNSUBSCRIBED, $gone->status());
+        $this->assertSame(['a@example.com'], Contact::mailable()->pluck('email')->all());
+    }
+
+    public function test_template_headers_map_on_their_own_and_fill_the_new_fields(): void
+    {
+        $this->actingAs($this->marketing)->get('/contacts/import/plantilla')->assertOk()->assertDownload('plantilla-contactos-crm.xlsx');
+
+        $headers = array_keys(ImportFields::TEMPLATE);
+        $this->assertSame(array_column(ImportFields::TEMPLATE, 0), ImportFields::guess($headers));
+
+        $example = array_column(ImportFields::TEMPLATE, 1);
+        $import = $this->upload($this->csv([$headers, $example], ';', false), ['edition_year' => '']);
+        $this->runImport($import);
+
+        $ana = Contact::sole();
+        $this->assertSame(['Ana María', 'ana@ejemplo.com', '1020304050', 'Aficionado a las aves', 'Español', 'Redes sociales'], [
+            $ana->first_name, $ana->email, $ana->document_number, $ana->profile, $ana->language, $ana->referral_source,
+        ]);
+        $this->assertSame(['conferencias', 'salidas'], $ana->preferred_products);
+        $this->assertTrue($ana->preferred_products_manual);
+        $this->assertSame([2026], $ana->editions()->pluck('year')->all());
+    }
+
+    public function test_preferred_products_come_from_the_fair_master_columns(): void
+    {
+        $import = $this->upload($this->csv([
+            ['NOMBRES', 'EMAIL', 'REGISTRO', 'CONFERENCIAS', 'SALIDAS', 'TALLERES'],
+            ['Ana', 'ana@example.com', 'Plan Conferencias + 1 Salida de Pajareo', 'SI', 'SI', 'NO'],
+            ['Luis', 'luis@example.com', '1 Taller', '', '', ''],
+        ]));
+        $this->runImport($import);
+
+        $this->assertSame(['conferencias', 'salidas'], Contact::where('email', 'ana@example.com')->sole()->preferred_products);
+        $this->assertSame(['talleres'], Contact::where('email', 'luis@example.com')->sole()->preferred_products);
+        $this->assertFalse(Contact::where('email', 'ana@example.com')->sole()->preferred_products_manual);
     }
 
     public function test_reads_xlsx_with_numeric_cells(): void

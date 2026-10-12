@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\AuditLog;
+use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -42,8 +44,26 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        $blocked = null;
+        $active = function (User $user) use (&$blocked) {
+            $blocked = $user->isActive() ? null : $user;
+
+            return $blocked === null;
+        };
+
+        if (! Auth::attemptWhen($this->only('email', 'password'), $active, $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
+
+            if ($blocked) {
+                AuditLog::record('auth.blocked', $blocked, user: $blocked);
+
+                throw ValidationException::withMessages([
+                    'email' => 'Tu usuario está desactivado. Pide a un administrador que lo active.',
+                ]);
+            }
+
+            $known = User::where('email', mb_strtolower($this->string('email')->trim()))->first();
+            AuditLog::record('auth.failed', $known, ['correo' => Str::limit((string) $this->input('email'), 120)]);
 
             throw ValidationException::withMessages([
                 'email' => __('auth.failed'),

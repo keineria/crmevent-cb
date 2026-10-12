@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Campaigns;
 
 use App\Http\Controllers\Controller;
 use App\Mail\CampaignMail;
+use App\Models\AuditLog;
 use App\Models\Campaign;
 use App\Models\CampaignClick;
 use App\Models\CampaignRecipient;
@@ -55,7 +56,7 @@ class CampaignController extends Controller
 
         return Inertia::render('campaigns/index', [
             'campaigns' => $campaigns,
-            'templates' => MailTemplate::orderBy('name')->get(['id', 'name']),
+            'templates' => MailTemplate::forCampaigns()->orderBy('name')->get(['id', 'name']),
             'canEdit' => $request->user()->hasAnyRole(Roles::CAMPAIGN_EDITORS),
             'senderReady' => $this->senderReady(),
         ]);
@@ -64,7 +65,7 @@ class CampaignController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate(['template_id' => ['nullable', 'integer', 'exists:mail_templates,id']]);
-        $template = isset($data['template_id']) ? MailTemplate::find($data['template_id']) : null;
+        $template = isset($data['template_id']) ? MailTemplate::forCampaigns()->find($data['template_id']) : null;
 
         $campaign = Campaign::create([
             'name' => $template ? "{$template->name} · ".now(self::TIMEZONE)->translatedFormat('j M Y') : 'Nueva campaña',
@@ -76,6 +77,7 @@ class CampaignController extends Controller
             'created_by' => $request->user()->id,
             'updated_by' => $request->user()->id,
         ]);
+        AuditLog::record('campaign.created', $campaign, $template ? ['plantilla' => $template->name] : []);
 
         return to_route('campaigns.edit', $campaign);
     }
@@ -118,14 +120,19 @@ class CampaignController extends Controller
 
         $data = $request->validate([...self::contentRules(), ...Segment::rules()]);
 
-        $campaign->update([
+        $campaign->fill([
             'name' => $data['name'],
             'subject' => $data['subject'] ?? '',
             'preheader' => $data['preheader'] ?? null,
             'body' => $data['body'] ?? '',
             'segment' => Segment::clean($data['segment'] ?? []),
-            'updated_by' => $request->user()->id,
         ]);
+        $changed = array_keys($campaign->getDirty());
+        $campaign->updated_by = $request->user()->id;
+        $campaign->save();
+        if ($changed) {
+            AuditLog::record('campaign.updated', $campaign, ['campos' => $changed]);
+        }
 
         return back()->with('success', 'Campaña guardada.');
     }
@@ -134,6 +141,7 @@ class CampaignController extends Controller
     {
         abort_unless($campaign->status === Campaign::DRAFT, 409, 'Solo se pueden borrar borradores.');
 
+        AuditLog::record('campaign.deleted', $campaign, ['nombre' => $campaign->name]);
         $campaign->delete();
 
         return to_route('campaigns.index')->with('success', 'Borrador eliminado.');
@@ -183,6 +191,8 @@ class CampaignController extends Controller
             return back()->with('error', 'El servidor de correo rechazó la prueba: '.$e->getMessage());
         }
 
+        AuditLog::record('campaign.tested', $campaign, ['correo' => $data['email']]);
+
         return back()->with('success', "Prueba enviada a {$data['email']}. Revisa también la carpeta de spam.");
     }
 
@@ -210,6 +220,10 @@ class CampaignController extends Controller
 
         $campaign->update(['scheduled_at' => $scheduledAt, 'updated_by' => $request->user()->id]);
         $this->dispatcher->launch($campaign);
+        AuditLog::record($scheduledAt ? 'campaign.scheduled' : 'campaign.launched', $campaign, array_filter([
+            'programada' => $scheduledAt?->toIso8601String(),
+            'publico' => $campaign->recipients()->count() ?: null,
+        ]));
 
         return to_route('campaigns.show', $campaign)->with('success', $scheduledAt
             ? 'Campaña programada para el '.$scheduledAt->setTimezone(self::TIMEZONE)->translatedFormat('j \d\e F \a \l\a\s g:i a').'.'
@@ -221,6 +235,7 @@ class CampaignController extends Controller
         abort_unless($campaign->status === Campaign::SENDING, 409);
 
         $campaign->update(['status' => Campaign::PAUSED]);
+        AuditLog::record('campaign.paused', $campaign);
 
         return back()->with('success', 'Envío en pausa. Los correos que ya estaban en cola pueden salir en el próximo minuto.');
     }
@@ -230,6 +245,7 @@ class CampaignController extends Controller
         abort_unless($campaign->status === Campaign::PAUSED, 409);
 
         $campaign->update(['status' => Campaign::SENDING]);
+        AuditLog::record('campaign.resumed', $campaign);
 
         return back()->with('success', 'Envío reanudado.');
     }
@@ -238,6 +254,7 @@ class CampaignController extends Controller
     {
         if ($campaign->status === Campaign::SCHEDULED) {
             $campaign->update(['status' => Campaign::DRAFT, 'scheduled_at' => null]);
+            AuditLog::record('campaign.unscheduled', $campaign);
 
             return to_route('campaigns.edit', $campaign)->with('success', 'Se quitó la programación. La campaña volvió a borrador.');
         }
@@ -248,6 +265,7 @@ class CampaignController extends Controller
             $campaign->update(['status' => Campaign::CANCELLED, 'finished_at' => now()]);
             $campaign->recipients()->where('status', CampaignRecipient::PENDING)->update(['status' => CampaignRecipient::SKIPPED, 'error' => 'Campaña cancelada.']);
         });
+        AuditLog::record('campaign.cancelled', $campaign);
 
         return back()->with('success', 'Campaña cancelada. No saldrán más correos.');
     }
@@ -260,6 +278,9 @@ class CampaignController extends Controller
 
         if ($count && $campaign->status === Campaign::SENT) {
             $campaign->update(['status' => Campaign::SENDING, 'finished_at' => null]);
+        }
+        if ($count) {
+            AuditLog::record('campaign.retried', $campaign, ['correos' => $count]);
         }
 
         return back()->with('success', $count ? "Se volverán a intentar {$count} correos." : 'No hay correos fallidos.');
@@ -274,6 +295,8 @@ class CampaignController extends Controller
             'created_by' => $request->user()->id,
             'updated_by' => $request->user()->id,
         ]);
+
+        AuditLog::record('campaign.duplicated', $copy, ['original' => $campaign->name]);
 
         return to_route('campaigns.edit', $copy)->with('success', 'Copia creada como borrador.');
     }

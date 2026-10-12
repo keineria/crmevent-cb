@@ -9,6 +9,7 @@ use App\Models\PluginConnection;
 use App\Models\Registration;
 use App\Models\RegistrationActivity;
 use App\Models\RegistrationParticipant;
+use App\Services\Contacts\ContactInsights;
 use App\Services\Contacts\ContactMatcher;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -25,7 +26,7 @@ class RegistrationSync
     /** Safety limit per run; the next run continues from the saved cursor. */
     private const MAX_PAGES = 40;
 
-    public function __construct(private ContactMatcher $matcher) {}
+    public function __construct(private ContactMatcher $matcher, private ContactInsights $insights) {}
 
     /**
      * @return array{activities: int, orders: int, participants: int, new_contacts: int, has_more: bool}
@@ -241,6 +242,11 @@ class RegistrationSync
                 $contact->{$field} = Str::limit((string) $data[$field], 120, '');
             }
         }
+
+        // Buyers accept the privacy policy at checkout, so they are Activo unless they unsubscribed.
+        if ($paid && $contact->email && $contact->unsubscribed_at === null && ! $contact->marketing_consent) {
+            $contact->grantConsent('Compra en el plugin de inscripciones');
+        }
         $contact->save();
 
         return $contact;
@@ -265,6 +271,8 @@ class RegistrationSync
             'Fuente' => 'Plugin de inscripciones',
         ]));
         $edition->save();
+
+        $this->insights->refresh($contact);
     }
 
     /**

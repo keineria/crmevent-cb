@@ -32,6 +32,16 @@ class CampaignRenderer
      */
     public function body(string $markdown, Contact $contact, ?callable $trackLink = null): string
     {
+        return $this->fill($this->html($markdown, $trackLink), $contact, escape: true);
+    }
+
+    /**
+     * Markdown and buttons to email-safe HTML, before any {{campo}} is replaced.
+     *
+     * @param  callable(string): string|null  $trackLink
+     */
+    public function html(string $markdown, ?callable $trackLink = null): string
+    {
         $buttons = [];
         $markdown = preg_replace_callback('/^[ \t]*\[\[([^|\]]+)\|\s*(https?:\/\/[^\]\s]+)\s*\]\][ \t]*$/mu', function (array $m) use (&$buttons) {
             $buttons[] = ['text' => trim($m[1]), 'url' => $m[2]];
@@ -56,7 +66,7 @@ class CampaignRenderer
             $html = preg_replace_callback('/href="(https?:\/\/[^"]+)"/', fn (array $m) => 'href="'.e($trackLink(html_entity_decode($m[1]))).'"', $html);
         }
 
-        return $this->fill($html, $contact, escape: true);
+        return $html;
     }
 
     public function subject(string $subject, Contact $contact): string
@@ -79,6 +89,16 @@ class CampaignRenderer
             'organizacion' => $contact->organization,
         ];
 
+        return $this->replace($text, $values, $escape);
+    }
+
+    /**
+     * Replaces {{campo}} and {{campo|respaldo}} with the given values; unknown fields stay as written.
+     *
+     * @param  array<string, string|null>  $values
+     */
+    public function replace(string $text, array $values, bool $escape): string
+    {
         return preg_replace_callback(self::FIELD_PATTERN, function (array $m) use ($values, $escape) {
             if (! array_key_exists($m[1], $values)) {
                 return $m[0];

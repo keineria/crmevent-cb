@@ -1,14 +1,13 @@
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { IMPORT_STATUS_LABELS as STATUS_LABELS } from '@/lib/imports';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { LoaderCircle } from 'lucide-react';
+import { Download, LoaderCircle } from 'lucide-react';
 import { FormEventHandler } from 'react';
 
 interface RecentImport {
@@ -43,8 +42,7 @@ export default function ImportCreate() {
         file: File | null;
         kind: 'asistente' | 'interesado';
         edition_year: string;
-        has_consent: boolean;
-    }>({ file: null, kind: 'asistente', edition_year: String(defaultYear - 1), has_consent: false });
+    }>({ file: null, kind: 'asistente', edition_year: String(defaultYear - 1) });
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
@@ -60,6 +58,22 @@ export default function ImportCreate() {
                     title="Importar contactos"
                     description="Sube un Excel (.xlsx) o .csv. La primera fila debe tener los títulos de las columnas. En el siguiente paso eliges qué columna va a cada campo."
                 />
+
+                <div className="bg-primary/5 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4">
+                    <div className="max-w-md text-sm">
+                        <div className="font-medium">¿Vas a armar una lista nueva?</div>
+                        <p className="text-muted-foreground text-xs">
+                            Descarga la plantilla: sus columnas se reconocen solas e incluye producto preferido, perfil, idioma y estado. Quien ya
+                            esté en el CRM (mismo documento o correo) se completa, no se duplica.
+                        </p>
+                    </div>
+                    <Button variant="outline" asChild>
+                        <a href="/contacts/import/plantilla" download>
+                            <Download aria-hidden />
+                            Descargar plantilla
+                        </a>
+                    </Button>
+                </div>
 
                 <form onSubmit={submit} className="space-y-6">
                     <div className="grid gap-2">
@@ -126,18 +140,10 @@ export default function ImportCreate() {
                         <InputError message={errors.edition_year} />
                     </div>
 
-                    <div className="rounded-lg border p-4">
-                        <label className="flex gap-3 text-sm">
-                            <Checkbox checked={data.has_consent} onCheckedChange={(v) => setData('has_consent', v === true)} className="mt-0.5" />
-                            <span>
-                                <span className="block font-medium">Estas personas autorizaron recibir boletines</span>
-                                <span className="text-muted-foreground block text-xs">
-                                    Márcalo solo si, al registrarse, aceptaron el tratamiento de datos para comunicaciones de la feria (Ley 1581 de
-                                    2012). Sin esta autorización quedan en el CRM, pero no reciben difusiones.
-                                </span>
-                            </span>
-                        </label>
-                    </div>
+                    <p className="text-muted-foreground text-xs">
+                        Todos quedan como <strong>Activos</strong> (ya aceptaron la política de privacidad), salvo quienes la columna Estado marque
+                        como Desinscritos o ya se hayan desinscrito antes.
+                    </p>
 
                     <div className="flex items-center gap-4">
                         <Button type="submit" disabled={processing || !data.file}>

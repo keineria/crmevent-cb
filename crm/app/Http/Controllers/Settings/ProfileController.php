@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Models\AuditLog;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,7 +36,11 @@ class ProfileController extends Controller
             $request->user()->email_verified_at = null;
         }
 
+        $changed = array_keys($request->user()->getDirty());
         $request->user()->save();
+        if ($changed) {
+            AuditLog::record('profile.updated', $request->user(), ['campos' => array_values(array_diff($changed, ['email_verified_at']))]);
+        }
 
         return to_route('profile.edit');
     }
@@ -50,6 +55,7 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
+        AuditLog::record('profile.deleted', $user, ['correo' => $user->email]);
 
         Auth::logout();
 

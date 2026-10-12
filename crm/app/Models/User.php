@@ -28,6 +28,14 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'deactivated_at' => 'datetime',
+            'last_login_at' => 'datetime',
         ];
+    }
+
+    /** A deactivated account keeps its history but can no longer sign in. */
+    public function isActive(): bool
+    {
+        return $this->deactivated_at === null;
     }
 }
