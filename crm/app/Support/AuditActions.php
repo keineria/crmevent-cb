@@ -3,6 +3,9 @@
 namespace App\Support;
 
 use App\Models\Campaign;
+use App\Models\Certificate;
+use App\Models\CertificateCategory;
+use App\Models\CertificateRecipient;
 use App\Models\Contact;
 use App\Models\ContactImport;
 use App\Models\Expense;
@@ -25,6 +28,7 @@ final class AuditActions
         'checkin' => 'Check-in',
         'participant' => 'Participantes',
         'campaign' => 'Campañas',
+        'certificates' => 'Certificados',
         'contacts' => 'Contactos',
         'finance' => 'Finanzas',
         'reports' => 'Reportes',
@@ -75,6 +79,19 @@ final class AuditActions
         'template.updated' => ['campaign', 'Editó una plantilla'],
         'template.deleted' => ['campaign', 'Borró una plantilla'],
 
+        'certificate.category_created' => ['certificates', 'Creó una categoría de certificados'],
+        'certificate.category_updated' => ['certificates', 'Editó el diseño de una categoría de certificados'],
+        'certificate.category_file' => ['certificates', 'Cambió una imagen de una categoría de certificados'],
+        'certificate.category_deleted' => ['certificates', 'Borró una categoría de certificados'],
+        'certificate.created' => ['certificates', 'Asoció un certificado a una actividad'],
+        'certificate.updated' => ['certificates', 'Editó un certificado'],
+        'certificate.deleted' => ['certificates', 'Quitó un certificado de una actividad'],
+        'certificate.tested' => ['certificates', 'Envió una prueba de certificado'],
+        'certificate.sent' => ['certificates', 'Envió los certificados de una actividad'],
+        'certificate.resent' => ['certificates', 'Reenvió el certificado a una persona'],
+        'certificate.downloaded' => ['certificates', 'Descargó el certificado de una persona'],
+        'certificate.mail_updated' => ['certificates', 'Editó el correo del certificado'],
+
         'contacts.uploaded' => ['contacts', 'Subió un Excel de contactos'],
         'contacts.imported' => ['contacts', 'Importó contactos'],
         'contacts.template' => ['contacts', 'Descargó la plantilla de contactos'],
@@ -121,6 +138,9 @@ final class AuditActions
             $subject instanceof User => "{$subject->name} <{$subject->email}>",
             $subject instanceof RegistrationParticipant => trim("{$subject->full_name} · {$subject->document_number}", ' ·'),
             $subject instanceof Campaign, $subject instanceof MailTemplate => (string) $subject->name,
+            $subject instanceof CertificateCategory => (string) $subject->name,
+            $subject instanceof Certificate => "{$subject->activity_name} · ".($subject->category?->name ?? ''),
+            $subject instanceof CertificateRecipient => trim("{$subject->full_name} · {$subject->code}", ' ·'),
             $subject instanceof Expense => (string) $subject->concept,
             $subject instanceof ContactImport => (string) $subject->original_name,
             $subject instanceof Contact => trim($subject->fullName().' · '.($subject->email ?? $subject->document_number ?? ''), ' ·') ?: "Contacto #{$subject->id}",

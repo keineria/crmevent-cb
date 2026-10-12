@@ -16,6 +16,12 @@ return [
     'qr_emails_per_hour' => (int) env('CRM_QR_EMAILS_PER_HOUR', 90),
 
     /*
+     * Attendance certificate emails per hour when a certificate is sent. They go out from the transactional mailbox,
+     * like the QR emails, so keep both under the mailbox's hourly limit if they are sent at the same time.
+     */
+    'certificate_emails_per_hour' => (int) env('CRM_CERTIFICATE_EMAILS_PER_HOUR', 90),
+
+    /*
      * Campaign emails per hour when Correo de envíos › Difusión has no hourly limit set.
      */
     'campaign_emails_per_hour' => (int) env('CRM_CAMPAIGN_EMAILS_PER_HOUR', 90),
