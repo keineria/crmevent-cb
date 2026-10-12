@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Reports;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\CheckIn;
 use App\Models\PluginConnection;
 use App\Models\RegistrationParticipant;
@@ -89,6 +90,7 @@ class ReportController extends Controller
         $report = $this->report($request);
         $people = $report->people($section, $card);
         $name = Str::slug(EditionReport::SECTIONS[$section].' '.$report->cardLabel($section, $card)).'-'.$report->year.'.csv';
+        AuditLog::record('report.exported', null, ['archivo' => $name, 'personas' => $people->count()]);
 
         return response()->streamDownload(function () use ($report, $people, $section, $card) {
             $out = fopen('php://output', 'w');
