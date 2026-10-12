@@ -16,6 +16,11 @@ return [
     'qr_emails_per_hour' => (int) env('CRM_QR_EMAILS_PER_HOUR', 90),
 
     /*
+     * Campaign emails per hour when Correo de envíos › Difusión has no hourly limit set.
+     */
+    'campaign_emails_per_hour' => (int) env('CRM_CAMPAIGN_EMAILS_PER_HOUR', 90),
+
+    /*
      * Participant portal ("Inscritos"): read-only lookup by document number behind a human check.
      * With Cloudflare Turnstile keys the check is Turnstile; without them, a simple sum asked by the CRM.
      */

@@ -26,7 +26,7 @@ final class Roles
         self::REGISTRATION => 'Check-in en la entrada (conferencias, talleres y otras actividades), inscripciones y corregir datos básicos.',
         self::TRIP_REGISTRATION => 'Check-in en el punto de encuentro de las salidas y corregir datos básicos.',
         self::ANALYST => 'Ver inscripciones, actividades y contactos.',
-        self::MARKETING => 'Contactos e importación de Excel.',
+        self::MARKETING => 'Contactos, importación de Excel, plantillas y campañas de correo.',
     ];
 
     /** Roles that can see the contact list. */
@@ -52,6 +52,12 @@ final class Roles
 
     /** Roles that send participants their QR and see the check-in totals. */
     public const CHECKIN_MANAGERS = [self::ADMIN, self::REGISTRATION_ADMIN];
+
+    /** Roles that see campaigns and their results. */
+    public const CAMPAIGN_VIEWERS = [self::ADMIN, self::MARKETING, self::ANALYST];
+
+    /** Roles that write templates and send campaigns. */
+    public const CAMPAIGN_EDITORS = [self::ADMIN, self::MARKETING];
 
     /** Roles that can import spreadsheets of contacts. */
     public const CONTACT_IMPORTERS = [self::ADMIN, self::MARKETING];
