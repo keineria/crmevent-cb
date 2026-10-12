@@ -114,11 +114,14 @@ if ! grep -q "docRoot.*app/crm/public" "$VHOST"; then
     grep -q "autoLoadHtaccess" "$VHOST" || sed -i -E '0,/^\s*rewrite\s*\{/s##rewrite  {\n  autoLoadHtaccess        1#' "$VHOST"
     chown lsadm:nobody "$VHOST" 2>/dev/null || true
 fi
-# CyberPanel writes Let's Encrypt challenges under public_html; expose them from the new docRoot so SSL renews.
-mkdir -p "${SITE}/public_html/.well-known"
-chown "$SITEUSER": "${SITE}/public_html/.well-known"
-ln -sfn "${SITE}/public_html/.well-known" "${CRM}/public/.well-known"
+# Let's Encrypt challenges must be served from the docRoot itself: LiteSpeed answered 404 through a symlink.
+[[ -L "${CRM}/public/.well-known" ]] && rm -f "${CRM}/public/.well-known"
+mkdir -p "${CRM}/public/.well-known/acme-challenge"
+chown -R "$SITEUSER": "${CRM}/public/.well-known"
 systemctl restart lsws
+echo ok > "${CRM}/public/.well-known/acme-challenge/crm-check"
+echo "Prueba de verificación HTTP: $(curl -s -o /dev/null -w '%{http_code}' --resolve "${DOMAIN}:80:127.0.0.1" "http://${DOMAIN}/.well-known/acme-challenge/crm-check" || true)"
+rm -f "${CRM}/public/.well-known/acme-challenge/crm-check"
 
 # A Let's Encrypt *staging* certificate (what CyberPanel leaves after failed attempts) is not trusted by browsers.
 # Replace a missing or staging certificate with a real one, in the files the CyberPanel vhost already points to.
@@ -128,7 +131,7 @@ ISSUER="$(openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -issuer 2>/dev/nul
 if [[ -x "$ACME" ]] && { [[ -z "$ISSUER" ]] || grep -qi staging <<<"$ISSUER"; }; then
     say "Emitiendo el certificado SSL de Let's Encrypt"
     mkdir -p "$CERT_DIR"
-    if "$ACME" --issue -d "$DOMAIN" --webroot "${SITE}/public_html" --server letsencrypt --force \
+    if "$ACME" --issue -d "$DOMAIN" --webroot "${CRM}/public" --server letsencrypt --force \
         && "$ACME" --install-cert -d "$DOMAIN" --cert-file "${CERT_DIR}/cert.pem" --key-file "${CERT_DIR}/privkey.pem" \
             --fullchain-file "${CERT_DIR}/fullchain.pem"; then
         systemctl restart lsws
