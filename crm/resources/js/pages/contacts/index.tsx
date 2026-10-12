@@ -23,6 +23,7 @@ interface ContactRow {
     is_interested: boolean;
     is_subscriber: boolean;
     status: Status;
+    user_type: 'cliente' | 'suscriptor';
     stars: number | null;
     products: string[];
     years: number[];
@@ -45,6 +46,7 @@ interface Filters {
     q?: string;
     tipo?: string;
     estado?: string;
+    usuario?: string;
     producto?: string;
     estrellas?: number;
     anio?: number;
@@ -53,7 +55,7 @@ interface Filters {
 interface PageProps {
     contacts: Paginated<ContactRow>;
     filters: Filters;
-    stats: { total: number; attendees: number; interested: number; subscribers: number; active: number; unsubscribed: number };
+    stats: { total: number; attendees: number; interested: number; subscribers: number; clients: number; active: number; unsubscribed: number };
     products: Record<string, string>;
     years: number[];
     formEndpoint: string;
@@ -122,12 +124,12 @@ export default function ContactsIndex() {
                     <Stat label="Total" value={stats.total} />
                     <Stat label="Asistentes" value={stats.attendees} />
                     <Stat label="Interesados" value={stats.interested} />
-                    <Stat label="Suscriptores" value={stats.subscribers} />
+                    <Stat label="Clientes" value={stats.clients} />
                     <Stat label="Activos" value={stats.active} />
                     <Stat label="Desinscritos" value={stats.unsubscribed} />
                 </dl>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[1fr_10rem_10rem_11rem_10rem_9rem]">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[1fr_9rem_11rem_9rem_10rem_10rem_8rem]">
                     <form onSubmit={submitSearch} role="search" className="relative">
                         <Label htmlFor="q" className="sr-only">
                             Buscar
@@ -150,7 +152,17 @@ export default function ContactsIndex() {
                             ['', 'Todos los tipos'],
                             ['asistentes', 'Asistentes'],
                             ['interesados', 'Interesados'],
-                            ['suscriptores', 'Suscriptores'],
+                            ['suscriptores', 'Boletín web'],
+                        ]}
+                    />
+                    <FilterSelect
+                        label="Usuario"
+                        value={filters.usuario ?? ''}
+                        onChange={(v) => apply({ usuario: v })}
+                        options={[
+                            ['', 'Clientes y suscriptores'],
+                            ['cliente', 'Clientes (ya compraron)'],
+                            ['suscriptor', 'Suscriptores (aún no compran)'],
                         ]}
                     />
                     <FilterSelect
@@ -197,11 +209,12 @@ export default function ContactsIndex() {
                     </div>
                 ) : (
                     <div className="overflow-x-auto rounded-xl border">
-                        <table className="w-full min-w-[1280px] text-sm">
+                        <table className="w-full min-w-[1380px] text-sm">
                             <thead className="bg-muted/50 text-muted-foreground text-left text-xs">
                                 <tr>
                                     {[
                                         'Contacto',
+                                        'Usuario',
                                         'Correo',
                                         'Teléfono',
                                         'Tipo',
@@ -228,13 +241,18 @@ export default function ContactsIndex() {
                                             </Link>
                                             {c.organization && <div className="text-muted-foreground text-xs">{c.organization}</div>}
                                         </td>
+                                        <td className="px-4 py-3">
+                                            <span className={c.user_type === 'cliente' ? 'text-success font-medium' : 'text-muted-foreground'}>
+                                                {c.user_type === 'cliente' ? 'Cliente' : 'Suscriptor'}
+                                            </span>
+                                        </td>
                                         <td className="px-4 py-3 break-all">{c.email ?? '—'}</td>
                                         <td className="px-4 py-3 whitespace-nowrap tabular-nums">{c.phone ?? '—'}</td>
                                         <td className="px-4 py-3">
                                             <div className="flex flex-wrap gap-1">
                                                 {c.is_attendee && <Tag>Asistente</Tag>}
                                                 {c.is_interested && <Tag>Interesado</Tag>}
-                                                {c.is_subscriber && <Tag>Suscriptor</Tag>}
+                                                {c.is_subscriber && <Tag>Boletín web</Tag>}
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">{c.products.length ? c.products.join(', ') : '—'}</td>

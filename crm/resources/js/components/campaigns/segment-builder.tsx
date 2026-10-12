@@ -16,7 +16,7 @@ export interface SegmentOptions {
 const TYPES: [string, string][] = [
     ['asistentes', 'Asistentes'],
     ['interesados', 'Interesados'],
-    ['suscriptores', 'Suscriptores'],
+    ['suscriptores', 'Boletín web'],
 ];
 
 const ACTIVITY_TYPES: Record<string, string> = { conference: 'Conferencia', birding: 'Salida', workshop: 'Taller', other: 'Otra' };
@@ -146,6 +146,17 @@ export default function SegmentBuilder({ value, onChange, options }: { value: Se
                         ['', 'Todas'],
                         ['colombia', 'Colombia'],
                         ['internacional', 'Fuera de Colombia'],
+                    ]}
+                />
+                <SelectField
+                    id="usuario"
+                    label="Usuario"
+                    value={value.usuario ?? ''}
+                    onChange={(v) => set({ usuario: v || undefined })}
+                    options={[
+                        ['', 'Clientes y suscriptores'],
+                        ['cliente', 'Clientes (ya compraron)'],
+                        ['suscriptor', 'Suscriptores (aún no compran)'],
                     ]}
                 />
                 <SelectField

@@ -51,6 +51,14 @@ class ContactListTest extends TestCase
             ->where('contacts.data.0.products', ['Conferencias', 'Salidas'])
             ->where('contacts.data.0.stars', 4));
 
+        $this->actingAs($user)->get('/contacts?usuario=cliente')->assertInertia(fn (Assert $page) => $page
+            ->has('contacts.data', 1)
+            ->where('contacts.data.0.user_type', 'cliente')
+            ->where('stats.clients', 1));
+        $this->actingAs($user)->get('/contacts?usuario=suscriptor')->assertInertia(fn (Assert $page) => $page
+            ->has('contacts.data', 2)
+            ->where('contacts.data.0.user_type', 'suscriptor'));
+
         $this->actingAs($user)->get('/contacts?q=Luis')->assertInertia(fn (Assert $page) => $page->has('contacts.data', 1));
     }
 }

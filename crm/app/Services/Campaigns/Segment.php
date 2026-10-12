@@ -44,6 +44,7 @@ class Segment
             'segment.productos' => ['nullable', 'array'],
             'segment.productos.*' => ['string', 'in:'.implode(',', array_keys(Contact::PRODUCTS))],
             'segment.min_estrellas' => ['nullable', 'integer', 'between:1,5'],
+            'segment.usuario' => ['nullable', 'in:'.implode(',', array_keys(Contact::USER_LABELS))],
         ];
     }
 
@@ -69,8 +70,10 @@ class Segment
                 $clean[$int] = (int) $segment[$int];
             }
         }
-        if (! empty($segment['pais'])) {
-            $clean['pais'] = $segment['pais'];
+        foreach (['pais', 'usuario'] as $string) {
+            if (! empty($segment[$string])) {
+                $clean[$string] = $segment[$string];
+            }
         }
 
         return $clean;
@@ -120,6 +123,7 @@ class Segment
                 }
             }))
             ->when($s['min_estrellas'] ?? null, fn (Builder $q, int $stars) => $q->where('engagement_stars', '>=', $stars))
+            ->when($s['usuario'] ?? null, fn (Builder $q, string $type) => $q->userType($type))
             ->when($s['pais'] ?? null, fn (Builder $q, string $country) => $country === 'colombia'
                 ? $q->where(fn (Builder $c) => $c->whereNull('country')->orWhere('country', '')->orWhere('country', 'like', 'colombia%'))
                 : $q->whereNotNull('country')->where('country', '!=', '')->where('country', 'not like', 'colombia%'));
@@ -163,6 +167,9 @@ class Segment
         }
         if ($s['min_estrellas'] ?? null) {
             $lines[] = "{$s['min_estrellas']} estrellas o más";
+        }
+        if ($s['usuario'] ?? null) {
+            $lines[] = $s['usuario'] === Contact::USER_CLIENT ? 'Solo clientes (ya compraron)' : 'Solo suscriptores (aún no compran)';
         }
 
         return $lines ?: ['Todos los contactos activos'];

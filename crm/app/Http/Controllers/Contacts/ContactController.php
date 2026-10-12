@@ -24,6 +24,7 @@ class ContactController extends Controller
             'q' => ['nullable', 'string', 'max:120'],
             'tipo' => ['nullable', 'in:'.implode(',', array_keys(self::TYPES))],
             'estado' => ['nullable', Rule::in(array_keys(Contact::STATUS_LABELS))],
+            'usuario' => ['nullable', Rule::in(array_keys(Contact::USER_LABELS))],
             'producto' => ['nullable', Rule::in(array_keys(Contact::PRODUCTS))],
             'estrellas' => ['nullable', 'integer', 'between:1,5'],
             'anio' => ['nullable', 'integer', 'between:2000,2100'],
@@ -44,6 +45,7 @@ class ContactController extends Controller
             ->when($filters['estado'] ?? null, fn (Builder $q, string $status) => $status === Contact::STATUS_ACTIVE
                 ? $q->whereNull('unsubscribed_at')
                 : $q->whereNotNull('unsubscribed_at'))
+            ->when($filters['usuario'] ?? null, fn (Builder $q, string $type) => $q->userType($type))
             ->when($filters['producto'] ?? null, fn (Builder $q, string $product) => $q->whereJsonContains('preferred_products', $product))
             ->when($filters['estrellas'] ?? null, fn (Builder $q, int $stars) => $q->where('engagement_stars', '>=', $stars))
             ->when($filters['anio'] ?? null, fn (Builder $q, int $year) => $q->whereHas('editions', fn (Builder $e) => $e->where('year', $year)))
@@ -65,6 +67,7 @@ class ContactController extends Controller
                 'is_interested' => $c->is_interested,
                 'is_subscriber' => $c->is_subscriber,
                 'status' => $c->status(),
+                'user_type' => $c->userType(),
                 'stars' => $c->engagement_stars,
                 'products' => $c->productLabels(),
                 'years' => $c->editions->pluck('year')->unique()->values(),
@@ -80,6 +83,7 @@ class ContactController extends Controller
                 'attendees' => Contact::where('is_attendee', true)->count(),
                 'interested' => Contact::where('is_interested', true)->count(),
                 'subscribers' => Contact::where('is_subscriber', true)->count(),
+                'clients' => Contact::userType(Contact::USER_CLIENT)->count(),
                 'active' => Contact::whereNull('unsubscribed_at')->count(),
                 'unsubscribed' => Contact::whereNotNull('unsubscribed_at')->count(),
             ],
@@ -111,6 +115,7 @@ class ContactController extends Controller
                 'is_interested' => $contact->is_interested,
                 'is_subscriber' => $contact->is_subscriber,
                 'status' => $contact->status(),
+                'user_type' => $contact->userType(),
                 'awaiting_confirmation' => $contact->awaitingConfirmation(),
                 'products' => $contact->productLabels(),
                 'products_manual' => $contact->preferred_products_manual,

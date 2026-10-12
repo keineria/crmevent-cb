@@ -25,6 +25,7 @@ interface ContactData {
     is_interested: boolean;
     is_subscriber: boolean;
     status: Status;
+    user_type: 'cliente' | 'suscriptor';
     awaiting_confirmation: boolean;
     products: string[];
     products_manual: boolean;
@@ -77,7 +78,7 @@ export default function ContactShow() {
         { title: 'Contactos', href: '/contacts' },
         { title, href: `/contacts/${contact.id}` },
     ];
-    const types = [contact.is_attendee && 'Asistente', contact.is_interested && 'Interesado', contact.is_subscriber && 'Suscriptor'].filter(Boolean);
+    const types = [contact.is_attendee && 'Asistente', contact.is_interested && 'Interesado', contact.is_subscriber && 'Boletín web'].filter(Boolean);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -85,7 +86,10 @@ export default function ContactShow() {
 
             <div className="flex max-w-5xl min-w-0 flex-1 flex-col gap-8 p-4 md:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4">
-                    <Heading title={title} description={types.join(' · ') || 'Contacto'} />
+                    <Heading
+                        title={title}
+                        description={[contact.user_type === 'cliente' ? 'Cliente' : 'Suscriptor (aún no compra)', ...types].join(' · ')}
+                    />
                     {canEdit && (
                         <Button variant="outline" asChild>
                             <Link href={`/contacts/${contact.id}/edit`}>

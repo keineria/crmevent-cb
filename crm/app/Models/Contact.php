@@ -60,6 +60,13 @@ class Contact extends Model
 
     public const STATUS_LABELS = [self::STATUS_ACTIVE => 'Activo', self::STATUS_UNSUBSCRIBED => 'Desinscrito'];
 
+    /** Usuario: Cliente bought at least once (a paid plugin order or a fair attended); Suscriptor has not bought yet. */
+    public const USER_CLIENT = 'cliente';
+
+    public const USER_SUBSCRIBER = 'suscriptor';
+
+    public const USER_LABELS = [self::USER_SUBSCRIBER => 'Suscriptor', self::USER_CLIENT => 'Cliente'];
+
     protected function casts(): array
     {
         return [
@@ -118,11 +125,34 @@ class Contact extends Model
     }
 
     /**
+     * Cliente (bought at least once) or Suscriptor (has not bought yet).
+     */
+    public function scopeUserType(Builder $query, string $type): void
+    {
+        $bought = fn (Builder $q) => $q
+            ->where('is_attendee', true)
+            ->orWhereHas('registrationParticipants.registration', fn (Builder $r) => $r->whereIn('status', Registration::PAID_STATUSES));
+
+        $type === self::USER_CLIENT ? $query->where($bought) : $query->whereNot($bought);
+    }
+
+    /**
      * Contacts that may receive broadcasts: they gave consent and have not unsubscribed.
      */
     public function scopeMailable(Builder $query): void
     {
         $query->whereNotNull('email')->where('marketing_consent', true)->whereNull('unsubscribed_at');
+    }
+
+    /** Expects withHistory() or loaded participants when the contact has no fair attended. */
+    public function userType(): string
+    {
+        $bought = $this->is_attendee
+            || $this->getAttribute('last_purchase_at') !== null
+            || ($this->relationLoaded('registrationParticipants')
+                && $this->registrationParticipants->contains(fn ($p) => in_array($p->registration?->status, Registration::PAID_STATUSES, true)));
+
+        return $bought ? self::USER_CLIENT : self::USER_SUBSCRIBER;
     }
 
     public function status(): string

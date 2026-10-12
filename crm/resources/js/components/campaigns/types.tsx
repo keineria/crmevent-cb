@@ -30,6 +30,7 @@ export interface Segment {
     pais?: string;
     productos?: string[];
     min_estrellas?: number;
+    usuario?: string;
 }
 
 export interface Content {
