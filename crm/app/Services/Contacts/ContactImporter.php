@@ -16,13 +16,14 @@ use Illuminate\Support\Str;
  * or by full name.
  * Families often register under one email or phone, so a shared email never merges two people with
  * different documents: the second one is saved without email. Saved values are never overwritten, and a
- * contact who unsubscribed stays unsubscribed even if the file says otherwise.
+ * contact who unsubscribed stays unsubscribed even if the file says otherwise. Everyone else becomes Activo
+ * (they accepted the privacy policy when they registered) unless the file marks them Desinscrito.
  */
 class ContactImporter
 {
     private const PROGRESS_EVERY = 100;
 
-    public function __construct(private SpreadsheetReader $reader, private ContactMatcher $matcher) {}
+    public function __construct(private SpreadsheetReader $reader, private ContactMatcher $matcher, private ContactInsights $insights) {}
 
     public function run(ContactImport $import): void
     {
@@ -119,10 +120,21 @@ class ContactImporter
             }
         }
 
+        // Products written in the file count as chosen by hand: they are kept and added to what was there.
+        if (! empty($data['preferred_products'])) {
+            $contact->preferred_products = ContactInsights::sortProducts([...($contact->preferred_products ?? []), ...$data['preferred_products']]);
+            $contact->preferred_products_manual = true;
+        }
+
         $role = $import->kind;
         $contact->{$role === ContactImport::KIND_ATTENDEE ? 'is_attendee' : 'is_interested'} = true;
 
-        if ($import->has_consent && $contact->unsubscribed_at === null && ! $contact->marketing_consent && $contact->email) {
+        if (($data['status'] ?? null) === Contact::STATUS_UNSUBSCRIBED) {
+            if ($contact->unsubscribed_at === null) {
+                $contact->forceFill(['unsubscribed_at' => now(), 'marketing_consent' => false, 'is_subscriber' => false]);
+            }
+        } elseif ($import->has_consent && $contact->unsubscribed_at === null && ! $contact->marketing_consent && $contact->email) {
+            // Everyone in our lists accepted the privacy policy when they registered.
             $contact->grantConsent("Importación «{$import->original_name}»");
         }
 
@@ -142,6 +154,8 @@ class ContactImporter
             $editionChanged = ! $edition->exists || $edition->isDirty();
             $edition->save();
         }
+
+        $this->insights->refresh($contact);
 
         return match (true) {
             $isNew => 'created',
@@ -183,6 +197,15 @@ class ContactImporter
             $data['phone'] = preg_replace('/[^\d+]/', '', $data['phone']) ?: null;
         }
 
+        if (isset($data['preferred_products'])) {
+            $data['preferred_products'] = ContactInsights::parseProducts($data['preferred_products']) ?: null;
+        }
+
+        if (isset($data['status'])) {
+            $status = ImportFields::normalize($data['status']);
+            $data['status'] = preg_match('/desinscrit|desuscrit|baja|inactiv|unsubscrib|^no$/', $status) ? Contact::STATUS_UNSUBSCRIBED : Contact::STATUS_ACTIVE;
+        }
+
         if (isset($data['edition_year'])) {
             $year = (int) preg_replace('/\D/', '', $data['edition_year']);
             $data['edition_year'] = $year >= 2000 && $year <= 2100 ? $year : null;
@@ -192,7 +215,9 @@ class ContactImporter
             if (isset($data[$field]) && is_string($data[$field])) {
                 $data[$field] = Str::limit($data[$field], match ($field) {
                     'notes' => 2000,
-                    'document_type', 'gender' => 30,
+                    'document_type', 'gender', 'language' => 30,
+                    'profile' => 60,
+                    'referral_source' => 80,
                     'phone', 'document_number' => 40,
                     default => 120,
                 }, '');

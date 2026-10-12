@@ -71,6 +71,9 @@ final class Roles
     /** Roles that record and change costs. */
     public const FINANCE_EDITORS = [self::ADMIN];
 
+    /** Roles that add contacts one by one and edit them (preferred product, profile, Activo / Desinscrito). */
+    public const CONTACT_EDITORS = [self::ADMIN, self::REGISTRATION_ADMIN, self::MARKETING];
+
     /** Roles that can import spreadsheets of contacts. */
     public const CONTACT_IMPORTERS = [self::ADMIN, self::MARKETING];
 

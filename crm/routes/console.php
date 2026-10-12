@@ -18,3 +18,6 @@ Schedule::job(new SyncPluginRegistrations)
 
 // Start scheduled campaigns and send the next batch, paced by the broadcast mailbox's hourly and daily limits.
 Schedule::command('campaigns:send')->everyMinute()->withoutOverlapping();
+
+// Preferred products (from purchases) and stars (from campaign opens and clicks) of every contact.
+Schedule::command('contacts:refresh-insights')->hourly()->withoutOverlapping();

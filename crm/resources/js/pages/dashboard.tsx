@@ -30,7 +30,7 @@ export default function Dashboard() {
                     </h2>
                     <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
                         <Stat label="Contactos" value={contacts.total} />
-                        <Stat label="Aceptan difusiones" value={contacts.mailable} />
+                        <Stat label="Activos con correo" value={contacts.mailable} />
                         <Stat label="Suscriptores web" value={contacts.subscribers} />
                         <Stat label="Fueron a 3 o más ferias" value={contacts.loyal} />
                     </dl>

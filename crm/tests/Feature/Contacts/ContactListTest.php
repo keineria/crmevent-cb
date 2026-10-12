@@ -30,19 +30,34 @@ class ContactListTest extends TestCase
             ->component('contacts/index')
             ->has('contacts.data', 3)
             ->where('stats.total', 3)
-            ->where('stats.mailable', 1)
+            ->where('stats.active', 2)
+            ->where('stats.unsubscribed', 1)
             ->where('years', [2024])
             ->where('canImport', true));
 
         $this->actingAs($user)->get('/contacts?tipo=asistentes&anio=2024')->assertInertia(fn (Assert $page) => $page
             ->has('contacts.data', 1)
             ->where('contacts.data.0.name', $ana->fullName())
-            ->where('contacts.data.0.status', 'acepta')
+            ->where('contacts.data.0.status', 'activo')
             ->where('contacts.data.0.years', [2024]));
 
-        $this->actingAs($user)->get('/contacts?estado=baja')->assertInertia(fn (Assert $page) => $page
+        $this->actingAs($user)->get('/contacts?estado=desinscrito')->assertInertia(fn (Assert $page) => $page
             ->has('contacts.data', 1)
-            ->where('contacts.data.0.status', 'baja'));
+            ->where('contacts.data.0.status', 'desinscrito'));
+
+        $ana->forceFill(['preferred_products' => ['conferencias', 'salidas'], 'engagement_stars' => 4])->save();
+        $this->actingAs($user)->get('/contacts?producto=salidas&estrellas=4')->assertInertia(fn (Assert $page) => $page
+            ->has('contacts.data', 1)
+            ->where('contacts.data.0.products', ['Conferencias', 'Salidas'])
+            ->where('contacts.data.0.stars', 4));
+
+        $this->actingAs($user)->get('/contacts?usuario=cliente')->assertInertia(fn (Assert $page) => $page
+            ->has('contacts.data', 1)
+            ->where('contacts.data.0.user_type', 'cliente')
+            ->where('stats.clients', 1));
+        $this->actingAs($user)->get('/contacts?usuario=suscriptor')->assertInertia(fn (Assert $page) => $page
+            ->has('contacts.data', 2)
+            ->where('contacts.data.0.user_type', 'suscriptor'));
 
         $this->actingAs($user)->get('/contacts?q=Luis')->assertInertia(fn (Assert $page) => $page->has('contacts.data', 1));
     }
