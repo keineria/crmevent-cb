@@ -43,7 +43,7 @@ class ContactInsightsTest extends TestCase
             ]);
         }
 
-        $registration = Registration::create(['wc_order_id' => 1, 'number' => '1', 'status' => Registration::PAID_STATUSES[0], 'total' => 0, 'edition_year' => 2026]);
+        $registration = Registration::create(['wc_order_id' => 1, 'number' => '1', 'status' => Registration::PAID_STATUSES[0], 'currency' => 'COP', 'total' => 0, 'edition_year' => 2026]);
         $participant = RegistrationParticipant::create([
             'registration_id' => $registration->id, 'contact_id' => $contact->id, 'evr_order_participant_id' => 1, 'evr_participant_id' => 1, 'full_name' => 'Ana',
         ]);
