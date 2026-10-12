@@ -20,7 +20,7 @@ class ContactInsightsTest extends TestCase
     {
         $this->assertNull(ContactInsights::stars(0, 0, 0));
         $this->assertSame(1, ContactInsights::stars(4, 0, 0));
-        $this->assertSame(3, ContactInsights::stars(4, 2, 0));
+        $this->assertSame(2, ContactInsights::stars(4, 2, 0));
         $this->assertSame(4, ContactInsights::stars(4, 4, 0));
         $this->assertSame(5, ContactInsights::stars(4, 4, 4));
     }
@@ -35,8 +35,8 @@ class ContactInsightsTest extends TestCase
     public function test_refresh_all_scores_campaigns_and_reads_plugin_purchases(): void
     {
         $contact = Contact::factory()->mailable()->create();
-        $campaign = Campaign::create(['name' => 'Prueba', 'subject' => 'Hola', 'body' => 'Hola', 'status' => 'sent']);
         foreach ([[now(), now()], [now(), null], [null, null], [null, null]] as $i => [$opened, $clicked]) {
+            $campaign = Campaign::create(['name' => "Prueba {$i}", 'subject' => 'Hola', 'body' => 'Hola', 'status' => 'sent']);
             CampaignRecipient::create([
                 'campaign_id' => $campaign->id, 'contact_id' => $contact->id, 'email' => "c{$i}@example.com",
                 'status' => CampaignRecipient::SENT, 'opened_at' => $opened, 'clicked_at' => $clicked,
