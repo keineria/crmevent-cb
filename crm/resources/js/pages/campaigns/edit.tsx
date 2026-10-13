@@ -40,6 +40,7 @@ export default function CampaignEdit() {
         subject: campaign.subject ?? '',
         preheader: campaign.preheader ?? '',
         body: campaign.body ?? '',
+        body_format: campaign.body_format ?? 'markdown',
         segment: campaign.segment ?? {},
     });
 

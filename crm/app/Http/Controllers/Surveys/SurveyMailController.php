@@ -30,6 +30,7 @@ class SurveyMailController extends Controller
                 'subject' => $template->subject,
                 'preheader' => $template->preheader,
                 'body' => $template->body,
+                'body_format' => $template->body_format,
                 'updated_at' => $template->updated_at?->toIso8601String(),
             ],
             'fields' => SurveyMail::FIELDS,
@@ -42,10 +43,11 @@ class SurveyMailController extends Controller
             'subject' => ['required', 'string', 'max:200'],
             'preheader' => ['nullable', 'string', 'max:200'],
             'body' => ['required', 'string', 'max:100000', 'regex:/\{\{\s*(encuesta|enlace)\s*\}\}/u'],
+            'body_format' => ['nullable', 'in:markdown,html'],
         ], ['body.regex' => 'Incluye {{encuesta}} (el botón) o {{enlace}}: sin eso nadie puede abrir su encuesta.']);
         $template = MailTemplate::system(MailTemplate::SURVEY);
 
-        $template->update([...$data, 'preheader' => $data['preheader'] ?? null, 'updated_by' => $request->user()->id]);
+        $template->update([...$data, 'preheader' => $data['preheader'] ?? null, 'body_format' => $data['body_format'] ?? 'markdown', 'updated_by' => $request->user()->id]);
         AuditLog::record('survey.mail_updated', $template);
 
         return back()->with('success', 'Correo de la encuesta guardado. Los próximos envíos usan este texto.');
@@ -57,6 +59,7 @@ class SurveyMailController extends Controller
             'subject' => ['nullable', 'string', 'max:200'],
             'preheader' => ['nullable', 'string', 'max:200'],
             'body' => ['nullable', 'string', 'max:100000'],
+            'body_format' => ['nullable', 'in:markdown,html'],
         ]);
 
         $mail = SurveyMail::sample($data);

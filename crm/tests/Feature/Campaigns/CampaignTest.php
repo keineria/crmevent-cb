@@ -166,6 +166,59 @@ class CampaignTest extends TestCase
             ->assertJsonPath('html', fn (string $html) => str_contains($html, '<strong>Novedades</strong>') && str_contains($html, 'Darte de baja'));
     }
 
+    public function test_html_bodies_are_cleaned_and_keep_fields(): void
+    {
+        $renderer = app(CampaignRenderer::class);
+        $contact = new Contact(['first_name' => 'Ana', 'last_name' => 'Ruiz', 'email' => 'ana@ejemplo.com']);
+
+        $html = $renderer->body(
+            '<style>.t{color:#123456}</style><h1 class="t" onclick="x()">Hola {{nombre|amigo}}</h1><script>alert(1)</script>'
+            .'<a href="javascript:alert(1)">mal</a><a href="https://ejemplo.com/?c={{correo}}">bien</a>'."\n[[Ver más|https://colombiabirdfair.com]]\n",
+            $contact, format: CampaignRenderer::FORMAT_HTML);
+
+        $this->assertStringContainsString('style="color: #123456;"', $html);
+        $this->assertStringContainsString('Hola Ana</h1>', $html);
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringNotContainsString('onclick', $html);
+        $this->assertStringNotContainsString('javascript:', $html);
+        $this->assertStringContainsString('href="https://ejemplo.com/?c=ana@ejemplo.com"', $html);
+        $this->assertStringContainsString('Ver más</a>', $html);
+    }
+
+    public function test_a_pasted_html_document_is_sent_as_written_with_the_unsubscribe_footer(): void
+    {
+        $document = '<!DOCTYPE html><html><head><title>x</title></head><body style="background:#000"><p>Hola {{nombre}}</p></body></html>';
+
+        $this->actingAs($this->user())
+            ->postJson('/campaigns/preview', ['subject' => 'Hola', 'preheader' => 'Mira esto', 'body' => $document, 'body_format' => 'html'])
+            ->assertOk()
+            ->assertJsonPath('html', fn (string $html) => str_contains($html, '<body style="background:#000"><div style="display:none')
+                && str_contains($html, 'Mira esto')
+                && str_contains($html, '<p>Hola María</p>')
+                && substr_count($html, '<body') === 1
+                && str_contains($html, 'Darte de baja')
+                && strpos($html, 'Darte de baja') < strpos($html, '</body>'));
+
+        // Markdown mode still shows HTML as text.
+        $this->postJson('/campaigns/preview', ['subject' => 'Hola', 'body' => '<b>hola</b>'])
+            ->assertJsonPath('html', fn (string $html) => str_contains($html, '&lt;b&gt;hola&lt;/b&gt;'));
+    }
+
+    public function test_the_body_format_is_saved_and_copied(): void
+    {
+        $user = $this->user();
+        $campaign = $this->campaign();
+
+        $this->actingAs($user)->put("/campaigns/{$campaign->id}", ['name' => 'HTML', 'subject' => 'Hola', 'body' => '<p>Hola</p>', 'body_format' => 'html'])
+            ->assertSessionHas('success');
+        $this->assertSame('html', $campaign->fresh()->body_format);
+
+        $this->post('/campaigns/templates', ['from_campaign' => $campaign->id]);
+        $this->assertSame('html', MailTemplate::forCampaigns()->latest('id')->first()->body_format);
+
+        $this->put("/campaigns/{$campaign->id}", ['name' => 'HTML', 'body' => 'x', 'body_format' => 'php'])->assertSessionHasErrors('body_format');
+    }
+
     public function test_launch_requires_a_verified_sender(): void
     {
         Contact::factory()->mailable()->create();

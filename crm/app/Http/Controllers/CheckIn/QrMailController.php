@@ -30,6 +30,7 @@ class QrMailController extends Controller
                 'subject' => $template->subject,
                 'preheader' => $template->preheader,
                 'body' => $template->body,
+                'body_format' => $template->body_format,
                 'updated_at' => $template->updated_at?->toIso8601String(),
             ],
             'fields' => CheckinQrMail::FIELDS,
@@ -45,6 +46,7 @@ class QrMailController extends Controller
             'subject' => $data['subject'],
             'preheader' => $data['preheader'] ?? null,
             'body' => $data['body'],
+            'body_format' => $data['body_format'] ?? 'markdown',
             'updated_by' => $request->user()->id,
         ]);
 
@@ -59,6 +61,7 @@ class QrMailController extends Controller
             'subject' => ['nullable', 'string', 'max:200'],
             'preheader' => ['nullable', 'string', 'max:200'],
             'body' => ['nullable', 'string', 'max:100000'],
+            'body_format' => ['nullable', 'in:markdown,html'],
         ]);
 
         $mail = CheckinQrMail::sample($data);
@@ -94,6 +97,7 @@ class QrMailController extends Controller
             'subject' => ['required', 'string', 'max:200'],
             'preheader' => ['nullable', 'string', 'max:200'],
             'body' => ['required', 'string', 'max:100000'],
+            'body_format' => ['nullable', 'in:markdown,html'],
         ];
     }
 }

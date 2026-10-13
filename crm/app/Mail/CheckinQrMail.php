@@ -38,7 +38,7 @@ class CheckinQrMail extends Mailable
     private ?array $sampleActivities = null;
 
     /**
-     * @param  array{subject?: string|null, preheader?: string|null, body?: string|null}|null  $draft  Unsaved content, for previews.
+     * @param  array{subject?: string|null, preheader?: string|null, body?: string|null, body_format?: string|null}|null  $draft  Unsaved content, for previews.
      */
     public function __construct(public RegistrationParticipant $participant, public ?array $draft = null) {}
 
@@ -77,12 +77,14 @@ class CheckinQrMail extends Mailable
         $renderer = app(CampaignRenderer::class);
         $preheader = $this->part('preheader');
 
+        $body = $this->bodyHtml();
+
         return new Content(
-            view: 'mail.checkin-qr',
+            view: CampaignRenderer::isDocument($body) ? 'mail.standalone' : 'mail.checkin-qr',
             with: [
                 'subject' => $this->renderedSubject(),
                 'preheader' => $preheader ? $renderer->replace($preheader, $this->values(), escape: false) : null,
-                'body' => $this->bodyHtml(),
+                'body' => $body,
                 'png' => app(CheckinQr::class)->png($this->participant, 8),
             ],
         );
@@ -102,7 +104,7 @@ class CheckinQrMail extends Mailable
             $body = "@@qr@@\n\n".$body;
         }
 
-        $html = $renderer->replace($renderer->html($body), $this->values(), escape: true);
+        $html = $renderer->replace($renderer->html($body, format: $this->format()), $this->values(), escape: true);
 
         return preg_replace_callback('/(?:<p>)?@@(qr|actividades)@@(?:<\/p>)?/', fn (array $m) => $m[1] === 'qr'
             ? $this->qrBlock()
@@ -138,6 +140,11 @@ class CheckinQrMail extends Mailable
     /**
      * Subject, preheader or body: from the draft when previewing, else from the saved template.
      */
+    private function format(): string
+    {
+        return $this->part('body_format') ?: CampaignRenderer::FORMAT_MARKDOWN;
+    }
+
     private function part(string $part): ?string
     {
         return $this->draft !== null ? ($this->draft[$part] ?? null) : $this->template()->{$part};

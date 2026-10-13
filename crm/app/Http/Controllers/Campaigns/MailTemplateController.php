@@ -39,6 +39,7 @@ class MailTemplateController extends Controller
             'subject' => $source->subject ?? '',
             'preheader' => $source?->preheader,
             'body' => $source->body ?? "# Hola {{nombre|amigo}}\n\nEscribe aquí tu mensaje.",
+            'body_format' => $source->body_format ?? CampaignRenderer::FORMAT_MARKDOWN,
             'updated_by' => $request->user()->id,
         ]);
         AuditLog::record('template.created', $template, $source ? ['desde_campana' => $source->name] : []);
@@ -51,7 +52,7 @@ class MailTemplateController extends Controller
         abort_if($template->system_key !== null, 404);
 
         return Inertia::render('campaigns/template-edit', [
-            'template' => $template->only(['id', 'name', 'subject', 'preheader', 'body']),
+            'template' => $template->only(['id', 'name', 'subject', 'preheader', 'body', 'body_format']),
             'fields' => CampaignRenderer::FIELDS,
         ]);
     }
@@ -67,6 +68,7 @@ class MailTemplateController extends Controller
             'subject' => $data['subject'] ?? '',
             'preheader' => $data['preheader'] ?? null,
             'body' => $data['body'] ?? '',
+            'body_format' => $data['body_format'] ?? CampaignRenderer::FORMAT_MARKDOWN,
         ]);
         $changed = array_keys($template->getDirty());
         $template->updated_by = $request->user()->id;

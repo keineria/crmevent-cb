@@ -321,6 +321,14 @@ class CheckInTest extends TestCase
             ->assertJsonPath('subject', 'Hola María')
             ->assertJson(fn ($json) => $json->where('html', fn (string $html) => str_contains($html, 'Prueba CBF-MPZ7K2QH') && str_contains($html, 'data:image/png'))->etc());
 
+        // HTML mode: blocks work inside pasted HTML, also a whole document.
+        $this->postJson('/checkin/correo-qr/vista-previa', [
+            'subject' => 'Hola', 'body_format' => 'html',
+            'body' => '<html><body><table><tr><td>Hola {{nombre}}</td></tr><tr><td>{{qr}}</td></tr><tr><td>{{actividades}}</td></tr></table></body></html>',
+        ])->assertOk()->assertJson(fn ($json) => $json->where('html', fn (string $html) => str_contains($html, 'Hola María<')
+            && str_contains($html, 'data:image/png') && str_contains($html, 'CBF-MPZ7K2QH') && str_contains($html, 'Conferencias')
+            && ! str_contains($html, '@@') && ! str_contains($html, 'brand'))->etc());
+
         $this->from('/checkin/correo-qr')->put('/checkin/correo-qr', ['subject' => 'Nuevo asunto', 'preheader' => '', 'body' => '{{qr}}'])
             ->assertSessionHas('success');
         $template = MailTemplate::system(MailTemplate::CHECKIN_QR);

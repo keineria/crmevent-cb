@@ -44,7 +44,7 @@ class SendCampaignEmail implements ShouldQueue
         }
 
         try {
-            $sent = $sender->send(new CampaignMail($recipient->contact, $campaign->subject, $campaign->preheader, $campaign->body, $recipient));
+            $sent = $sender->send(new CampaignMail($recipient->contact, $campaign->subject, $campaign->preheader, $campaign->body, $recipient, $campaign->body_format));
         } catch (Throwable $e) {
             $recipient->update(['status' => CampaignRecipient::FAILED, 'error' => Str::limit($e->getMessage(), 500)]);
             report($e);

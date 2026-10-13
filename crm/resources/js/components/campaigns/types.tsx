@@ -38,7 +38,11 @@ export interface Content {
     subject: string;
     preheader: string;
     body: string;
+    /** Markdown, or HTML pasted from a template builder. */
+    body_format: BodyFormat;
 }
+
+export type BodyFormat = 'markdown' | 'html';
 
 /** Share of a total as a whole percentage, or a dash when there is nothing to divide. */
 export function percent(part: number, total: number): string {

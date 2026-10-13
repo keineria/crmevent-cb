@@ -29,6 +29,7 @@ export default function SurveyMailEditor() {
         subject: template.subject ?? '',
         preheader: template.preheader ?? '',
         body: template.body ?? '',
+        body_format: template.body_format ?? 'markdown',
     });
 
     const submit: FormEventHandler = (e) => {
