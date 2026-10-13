@@ -11,9 +11,11 @@ use App\Models\RegistrationParticipant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
- * Numbers of one fair edition, built from paid registrations synced from the plugin and the CRM's check-ins.
+ * Numbers of one fair edition, built from paid registrations synced from the plugin and the CRM's check-ins, plus the
+ * attendees imported from past fairs' registration masters (see ImportedEdition).
  *
  * Every section is a list of cards; every card can list the people behind its number. The whole edition is
  * loaded once per request (a fair has a few thousand participants at most), so cards and their people lists
@@ -56,21 +58,27 @@ class EditionReport
     /** @var Collection<int, EventActivity>|null */
     private ?Collection $activities = null;
 
+    private ImportedEdition $imported;
+
     public function __construct(
         public readonly int $year,
         public readonly ?Carbon $from = null,
         public readonly ?Carbon $to = null,
-    ) {}
+    ) {
+        $this->imported = new ImportedEdition($year, $from, $to);
+    }
 
     /**
-     * Fair editions that have registrations, newest first.
+     * Fair editions that have registrations or imported attendees, newest first.
      *
      * @return list<int>
      */
     public static function editions(): array
     {
-        return Registration::query()->whereNotNull('edition_year')->distinct()->orderByDesc('edition_year')
+        $plugin = Registration::query()->whereNotNull('edition_year')->distinct()
             ->pluck('edition_year')->map(fn ($y) => (int) $y)->all();
+
+        return collect([...$plugin, ...ImportedEdition::years()])->unique()->sortDesc()->values()->all();
     }
 
     /**
@@ -86,11 +94,29 @@ class EditionReport
     }
 
     /**
+     * Paid plugin participants and imported attendees of the edition, by name.
+     *
      * @return Collection<int, RegistrationParticipant>
      */
     public function participants(): Collection
     {
-        return $this->participants ??= $this->query()
+        if ($this->participants !== null) {
+            return $this->participants;
+        }
+
+        $plugin = $this->pluginParticipants();
+
+        return $this->participants = $plugin->concat($this->imported->participants($plugin->pluck('contact_id')))
+            ->sortBy(fn (RegistrationParticipant $p) => mb_strtolower(Str::ascii((string) $p->full_name)))
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, RegistrationParticipant>
+     */
+    private function pluginParticipants(): Collection
+    {
+        return $this->query()
             ->with([
                 'registration:id,number,ordered_at,billing',
                 'activities' => fn ($q) => $q->whereIn('status', RegistrationActivity::ACTIVE_STATUSES)
@@ -321,8 +347,11 @@ class EditionReport
         $catalog = $this->activities->filter(fn (EventActivity $a) => $a->type === $type
             && (($a->event_date?->year ?? $this->year) === $this->year || isset($counts[$a->evr_id])));
 
+        // Activities of imported past fairs only exist in the imported rows.
+        $imported = collect($this->imported->activities())->filter(fn ($a) => $a['type'] === $type && isset($counts[$a['id']]));
+
         // Activities sold earlier but no longer in the catalog still show, named from the registration.
-        $missing = collect(array_keys($counts))->reject(fn ($id) => $catalog->has($id));
+        $missing = collect(array_keys($counts))->reject(fn ($id) => $catalog->has($id) || $imported->has($id));
         $names = $missing->isEmpty() ? collect() : RegistrationActivity::whereIn('evr_activity_id', $missing)
             ->get(['evr_activity_id', 'name', 'event_date', 'start_time', 'total'])->keyBy('evr_activity_id');
 
@@ -331,7 +360,10 @@ class EditionReport
             'date' => $a->event_date?->toDateString(), 'time' => $a->start_time ? substr($a->start_time, 0, 5) : null,
             'price' => (float) $a->price, 'capacity' => $a->capacity_total,
             'occupied' => $a->confirmed_count + $a->reserved_count,
-        ])->values()->concat($missing->map(function ($id) use ($names, $counts) {
+        ])->values()->concat($imported->map(fn ($a) => [
+            'id' => $a['id'], 'name' => $a['name'], 'destination' => null, 'date' => $a['date'], 'time' => null,
+            'price' => $a['price'], 'capacity' => 0, 'occupied' => $counts[$a['id']],
+        ])->values())->concat($missing->map(function ($id) use ($names, $counts) {
             $sold = $names->get($id);
 
             return [

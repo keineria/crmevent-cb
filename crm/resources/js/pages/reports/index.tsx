@@ -59,7 +59,7 @@ export default function Reports() {
             <div className="flex min-w-0 flex-1 flex-col gap-6 p-4 md:p-6">
                 <Heading
                     title={`Reportes de la feria ${filters.anio}`}
-                    description={`Inscripciones pagas sincronizadas del plugin y activaciones del check-in.${lastSync ? ` Actualizado: ${dateTime.format(new Date(lastSync))}.` : ''}`}
+                    description={`Inscripciones pagas sincronizadas del plugin, asistentes importados de ferias anteriores y activaciones del check-in.${lastSync ? ` Actualizado: ${dateTime.format(new Date(lastSync))}.` : ''}`}
                 />
 
                 <FilterBar path="/reports" filters={filters} editions={editions} today={today} />
