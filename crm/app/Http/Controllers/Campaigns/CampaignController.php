@@ -72,6 +72,7 @@ class CampaignController extends Controller
             'subject' => $template->subject ?? '',
             'preheader' => $template?->preheader,
             'body' => $template->body ?? "# Hola {{nombre|amigo}}\n\nEscribe aquí tu mensaje.\n\n[[Ver más|https://colombiabirdfair.com]]",
+            'body_format' => $template->body_format ?? CampaignRenderer::FORMAT_MARKDOWN,
             'segment' => [],
             'status' => Campaign::DRAFT,
             'created_by' => $request->user()->id,
@@ -98,6 +99,7 @@ class CampaignController extends Controller
                 'subject' => $campaign->subject,
                 'preheader' => $campaign->preheader,
                 'body' => $campaign->body,
+                'body_format' => $campaign->body_format,
                 'segment' => (object) Segment::clean($campaign->segment),
                 'status' => $campaign->status,
                 'scheduled_at' => $campaign->scheduled_at?->setTimezone(self::TIMEZONE)->format('Y-m-d\TH:i'),
@@ -125,6 +127,7 @@ class CampaignController extends Controller
             'subject' => $data['subject'] ?? '',
             'preheader' => $data['preheader'] ?? null,
             'body' => $data['body'] ?? '',
+            'body_format' => $data['body_format'] ?? CampaignRenderer::FORMAT_MARKDOWN,
             'segment' => Segment::clean($data['segment'] ?? []),
         ]);
         $changed = array_keys($campaign->getDirty());
@@ -153,9 +156,11 @@ class CampaignController extends Controller
             'subject' => ['nullable', 'string', 'max:200'],
             'preheader' => ['nullable', 'string', 'max:200'],
             'body' => ['nullable', 'string', 'max:100000'],
+            'body_format' => ['nullable', 'in:markdown,html'],
         ]);
 
-        $mail = new CampaignMail($this->sampleContact(), $data['subject'] ?? '', $data['preheader'] ?? null, $data['body'] ?? '');
+        $mail = new CampaignMail($this->sampleContact(), $data['subject'] ?? '', $data['preheader'] ?? null, $data['body'] ?? '',
+            format: $data['body_format'] ?? CampaignRenderer::FORMAT_MARKDOWN);
 
         return response()->json([
             'subject' => app(CampaignRenderer::class)->subject($data['subject'] ?? '', $mail->contact),
@@ -181,7 +186,7 @@ class CampaignController extends Controller
             return back()->with('error', 'Primero configura y verifica el correo de difusión en Configuración › Correo de envíos.');
         }
 
-        $mail = new CampaignMail($this->sampleContact(), "[Prueba] {$campaign->subject}", $campaign->preheader, $campaign->body);
+        $mail = new CampaignMail($this->sampleContact(), "[Prueba] {$campaign->subject}", $campaign->preheader, $campaign->body, format: $campaign->body_format);
 
         try {
             $mailer->for(MailSetting::PROFILE_BROADCAST)->to($data['email'])->send($mail);
@@ -289,7 +294,7 @@ class CampaignController extends Controller
     public function duplicate(Request $request, Campaign $campaign): RedirectResponse
     {
         $copy = Campaign::create([
-            ...$campaign->only(['subject', 'preheader', 'body', 'segment']),
+            ...$campaign->only(['subject', 'preheader', 'body', 'body_format', 'segment']),
             'name' => "{$campaign->name} (copia)",
             'status' => Campaign::DRAFT,
             'created_by' => $request->user()->id,
@@ -391,6 +396,7 @@ class CampaignController extends Controller
             'subject' => ['nullable', 'string', 'max:200'],
             'preheader' => ['nullable', 'string', 'max:200'],
             'body' => ['nullable', 'string', 'max:100000'],
+            'body_format' => ['nullable', 'in:markdown,html'],
         ];
     }
 

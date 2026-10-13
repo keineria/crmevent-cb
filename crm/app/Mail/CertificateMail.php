@@ -40,7 +40,7 @@ class CertificateMail extends Mailable
     private ?Certificate $sampleCertificate = null;
 
     /**
-     * @param  array{subject?: string|null, preheader?: string|null, body?: string|null}|null  $draft  Unsaved content, for previews.
+     * @param  array{subject?: string|null, preheader?: string|null, body?: string|null, body_format?: string|null}|null  $draft  Unsaved content, for previews.
      */
     public function __construct(public ?CertificateRecipient $recipient, public ?array $draft = null) {}
 
@@ -76,12 +76,14 @@ class CertificateMail extends Mailable
         $renderer = app(CampaignRenderer::class);
         $preheader = $this->part('preheader');
 
+        $body = $this->bodyHtml();
+
         return new Content(
-            view: 'mail.certificate',
+            view: CampaignRenderer::isDocument($body) ? 'mail.standalone' : 'mail.certificate',
             with: [
                 'subject' => $this->renderedSubject(),
                 'preheader' => $preheader ? $renderer->replace($preheader, $this->values(), escape: false) : null,
-                'body' => $this->bodyHtml(),
+                'body' => $body,
             ],
         );
     }
@@ -93,7 +95,7 @@ class CertificateMail extends Mailable
         $button = '[[Ver mi certificado|'.$this->values()['enlace'].']]';
         $body = preg_replace('/\{\{\s*certificado\s*\}\}/u', "\n\n{$button}\n\n", $body);
 
-        return $renderer->replace($renderer->html($body), $this->values(), escape: true);
+        return $renderer->replace($renderer->html($body, format: $this->format()), $this->values(), escape: true);
     }
 
     /**
@@ -151,6 +153,11 @@ class CertificateMail extends Mailable
                 'enlace' => $this->recipient->verificationUrl(),
             ];
         });
+    }
+
+    private function format(): string
+    {
+        return $this->part('body_format') ?: CampaignRenderer::FORMAT_MARKDOWN;
     }
 
     private function part(string $part): ?string

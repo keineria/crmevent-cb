@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'subject', 'preheader', 'body', 'segment', 'status', 'scheduled_at', 'started_at', 'finished_at', 'created_by', 'updated_by'])]
+#[Fillable(['name', 'subject', 'preheader', 'body', 'body_format', 'segment', 'status', 'scheduled_at', 'started_at', 'finished_at', 'created_by', 'updated_by'])]
 class Campaign extends Model
 {
     public const DRAFT = 'draft';

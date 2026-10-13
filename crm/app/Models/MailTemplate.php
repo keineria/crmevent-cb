@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * Rows with a system_key are the emails the CRM sends on its own; they are edited from their own page and never listed,
  * copied or deleted as campaign templates.
  */
-#[Fillable(['name', 'subject', 'preheader', 'body', 'updated_by'])]
+#[Fillable(['name', 'subject', 'preheader', 'body', 'body_format', 'updated_by'])]
 class MailTemplate extends Model
 {
     public const CHECKIN_QR = 'checkin_qr';

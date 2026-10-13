@@ -5,12 +5,19 @@ use App\Http\Controllers\Public\CampaignTrackingController;
 use App\Http\Controllers\Public\PassController;
 use App\Http\Controllers\Public\SubscriptionController;
 use App\Http\Controllers\Public\UnsubscribeController;
+use App\Services\Campaigns\CampaignRenderer;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard')->name('home');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
+
+    // Email editors: turns the Markdown being edited into HTML when switching the editor to HTML mode.
+    Route::post('plantillas/markdown-a-html', fn (Request $request) => response()->json([
+        'html' => app(CampaignRenderer::class)->html((string) ($request->validate(['body' => ['nullable', 'string', 'max:100000']])['body'] ?? '')),
+    ]))->middleware('throttle:60,1')->name('mail.markdown-to-html');
 });
 
 // Public pages linked from emails.

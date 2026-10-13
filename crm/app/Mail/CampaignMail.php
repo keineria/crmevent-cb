@@ -22,6 +22,7 @@ class CampaignMail extends BroadcastMailable
         public ?string $preheader,
         public string $body,
         public ?CampaignRecipient $recipient = null,
+        public string $format = CampaignRenderer::FORMAT_MARKDOWN,
     ) {
         parent::__construct($contact);
     }
@@ -57,14 +58,26 @@ class CampaignMail extends BroadcastMailable
             ? fn (string $url) => route('campaigns.track.click', ['token' => $recipient->token, 'u' => $url, 's' => self::linkSignature($recipient->token, $url)])
             : null;
 
-        return view('mail.campaign', [
+        $data = [
             'subject' => $renderer->subject($this->campaignSubject, $this->contact),
             'preheader' => $this->preheader ? $renderer->fill($this->preheader, $this->contact, escape: false) : null,
-            'body' => $renderer->body($this->body, $this->contact, $trackLink),
+            'body' => $renderer->body($this->body, $this->contact, $trackLink, $this->format),
             'pixel' => $recipient && ($setting->track_opens ?? false) ? route('campaigns.track.open', $recipient->token) : null,
             'unsubscribeUrl' => $this->unsubscribeUrl,
             'footerText' => $this->footerText,
-        ])->render();
+        ];
+
+        if (! CampaignRenderer::isDocument($data['body'])) {
+            return view('mail.campaign', $data)->render();
+        }
+
+        // A pasted document keeps its own design; the unsubscribe footer still goes at the end, as the law requires.
+        $append = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:0 12px 24px;">'
+            .'<div style="max-width:600px;text-align:left;font-family:Arial,Helvetica,sans-serif;">'
+            .view('mail.partials.broadcast-footer', $data)->render().'</div></td></tr></table>'
+            .($data['pixel'] ? '<img src="'.e($data['pixel']).'" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;">' : '');
+
+        return CampaignRenderer::document($data['body'], $data['preheader'], $append);
     }
 
     /**

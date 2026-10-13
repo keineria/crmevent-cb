@@ -29,7 +29,7 @@ class SurveyMail extends Mailable
     ];
 
     /**
-     * @param  array{subject?: string|null, preheader?: string|null, body?: string|null}|null  $draft  Unsaved content, for previews.
+     * @param  array{subject?: string|null, preheader?: string|null, body?: string|null, body_format?: string|null}|null  $draft  Unsaved content, for previews.
      */
     public function __construct(public ?SurveyInvitation $invitation, public ?array $draft = null) {}
 
@@ -56,12 +56,14 @@ class SurveyMail extends Mailable
         $renderer = app(CampaignRenderer::class);
         $preheader = $this->part('preheader');
 
+        $body = $this->bodyHtml();
+
         return new Content(
-            view: 'mail.survey',
+            view: CampaignRenderer::isDocument($body) ? 'mail.standalone' : 'mail.survey',
             with: [
                 'subject' => $this->renderedSubject(),
                 'preheader' => $preheader ? $renderer->replace($preheader, $this->values(), escape: false) : null,
-                'body' => $this->bodyHtml(),
+                'body' => $body,
             ],
         );
     }
@@ -73,7 +75,7 @@ class SurveyMail extends Mailable
         $button = '[[Responder la encuesta|'.$this->values()['enlace'].']]';
         $body = preg_replace('/\{\{\s*encuesta\s*\}\}/u', "\n\n{$button}\n\n", $body);
 
-        return $renderer->replace($renderer->html($body), $this->values(), escape: true);
+        return $renderer->replace($renderer->html($body, format: $this->format()), $this->values(), escape: true);
     }
 
     /**
@@ -102,6 +104,11 @@ class SurveyMail extends Mailable
                 'enlace' => $this->invitation->url(),
             ];
         });
+    }
+
+    private function format(): string
+    {
+        return $this->part('body_format') ?: CampaignRenderer::FORMAT_MARKDOWN;
     }
 
     private function part(string $part): ?string
