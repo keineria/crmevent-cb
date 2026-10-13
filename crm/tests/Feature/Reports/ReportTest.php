@@ -101,7 +101,7 @@ class ReportTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reports/index')
                 ->where('filters.anio', 2027)
-                ->where('editions', [2027, 2026])
+                ->where('editions', [2027, 2026, 2025])
                 ->where('summary.participants', 2)
                 ->where('summary.activated', 1)
                 ->where('summary.returning', 1)
@@ -235,5 +235,79 @@ class ReportTest extends TestCase
             ->assertJsonPath('cards.0', ['key' => 'Femenino', 'label' => 'Femenino', 'count' => 2, 'total' => 4])
             ->assertJsonPath('cards.1.key', 'Masculino')
             ->assertJsonPath('cards.2.label', 'Sin dato');
+    }
+
+    /**
+     * An attendee imported from a past fair's master, stored as Contactos › Importar saves it.
+     *
+     * @param  array<string, string>  $details
+     */
+    private function imported(string $first, string $last, array $details, array $contact = [], int $year = 2025): Contact
+    {
+        $this->seq++;
+        $person = Contact::factory()->create(['first_name' => $first, 'last_name' => $last, 'document_type' => 'CC', 'document_number' => (string) (9000 + $this->seq)] + $contact);
+        ContactEdition::create(['contact_id' => $person->id, 'year' => $year, 'role' => ContactEdition::ROLE_ATTENDEE, 'details' => $details]);
+
+        return $person;
+    }
+
+    public function test_imported_past_fairs_appear_as_editions_with_their_data(): void
+    {
+        $ana = $this->imported('Ana', 'Pérez', [
+            'FECHA' => '2025-02-03', 'REGISTRO' => 'Plan Conferencias + 2 Salidas', 'CONFERENCIAS' => 'SI', 'LANZAMIENTO' => 'Lanzamiento',
+            'VIERNES' => 'Anchicayá', 'SÁBADO' => 'Km 18  Bosque de Niebla', 'SAB. TALLER' => 'Ilustracion Colibries', 'VALOR Talleres' => '65000',
+            'ALIMENTACIÓN' => 'Vegetariano', 'CAMISA' => 'm', '# CAMISA' => '1',
+        ], ['gender' => 'Mujer', 'country' => 'Colombia', 'city' => 'Cali']);
+        $this->imported('Luis', 'Gómez', [
+            'FECHA' => '2025-01-20', 'CONFERENCIAS' => 'NO', 'SALIDAS' => 'SI', 'VIERNES' => 'Sonso', 'SÁBADO' => 'Anchicayá',
+            'DOM. TALLER' => 'Conservacion Pancho', 'VALOR Talleres' => '0', 'ALIMENTACIÓN' => 'Tradicional', 'CAMISA' => 'L',
+        ], ['gender' => 'Hombre', 'country' => 'Estados Unidos', 'city' => 'Miami']);
+        $this->imported('Interesada', 'Sola', ['CAMISA' => 'S'], year: 2025)->editions()->update(['role' => ContactEdition::ROLE_INTERESTED]);
+        ContactEdition::create(['contact_id' => $ana->id, 'year' => 2024, 'role' => ContactEdition::ROLE_ATTENDEE, 'details' => ['CONFERENCIAS' => 'SI']]);
+        $user = $this->staff(Roles::ANALYST);
+
+        $this->actingAs($user)->get('/reports?anio=2025')->assertInertia(fn (Assert $page) => $page
+            ->where('editions', [2025, 2024])
+            ->where('summary.participants', 2)
+            ->where('summary.orders', 2)
+            ->where('summary.trips', 4)
+            ->where('summary.countries', 2)
+            ->where('timeline.0', ['date' => '2025-01-20', 'participants' => 1]));
+
+        $trips = $this->actingAs($user)->getJson('/reports/salidas?anio=2025')->json('cards');
+        // Anchicayá on Friday and on Saturday are two outings, each on its day of the fair.
+        $this->assertSame([['Anchicayá', '2025-02-14', 1], ['Sonso', '2025-02-14', 1], ['Anchicayá', '2025-02-15', 1], ['Km 18 Bosque de Niebla', '2025-02-15', 1]],
+            array_map(fn ($c) => [$c['label'], $c['date'], $c['count']], $trips));
+
+        $this->actingAs($user)->getJson('/reports/conferencias?anio=2025')->assertJsonPath('cards.0.label', 'Conferencias')->assertJsonPath('cards.0.count', 1);
+        $this->actingAs($user)->getJson('/reports/otras?anio=2025')->assertJsonPath('cards.0.label', 'Lanzamiento');
+        $this->actingAs($user)->getJson('/reports/talleres-pagos?anio=2025')->assertJsonCount(1, 'cards')->assertJsonPath('cards.0.label', 'Ilustracion Colibries');
+        $this->actingAs($user)->getJson('/reports/talleres-gratuitos?anio=2025')->assertJsonCount(1, 'cards')->assertJsonPath('cards.0.label', 'Conservacion Pancho');
+        $this->actingAs($user)->getJson('/reports/tallas?anio=2025')->assertJsonPath('cards.0.key', 'M')->assertJsonPath('cards.1.key', 'L')->assertJsonCount(2, 'cards');
+        $this->actingAs($user)->getJson('/reports/alimentacion?anio=2025')->assertJsonPath('cards.0.label', 'Tradicional')->assertJsonPath('cards.1.label', 'Vegetariana');
+        $this->actingAs($user)->getJson('/reports/sexo?anio=2025')->assertJsonCount(2, 'cards');
+        $this->actingAs($user)->getJson('/reports/recurrencia?anio=2025')->assertJsonPath('cards.1.count', 1);
+
+        // Cards open the people behind them, linked to their contact.
+        $this->actingAs($user)->getJson('/reports/salidas/personas?anio=2025&tarjeta='.$trips[3]['key'])
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('people.0.contact_id', $ana->id)
+            ->assertJsonPath('people.0.name', 'Ana Pérez')
+            ->assertJsonPath('people.0.country', 'Colombia')
+            ->assertJsonPath('people.0.order', 'Importado');
+
+        // The purchase-date filter uses each row's FECHA.
+        $this->actingAs($user)->get('/reports?anio=2025&desde=2025-02-01&hasta=2025-02-28')
+            ->assertInertia(fn (Assert $page) => $page->where('summary.participants', 1));
+    }
+
+    public function test_plugin_buyers_are_not_counted_twice_with_their_imported_row(): void
+    {
+        $contact = $this->imported('Ana', 'Pérez', ['CONFERENCIAS' => 'SI', 'CAMISA' => 'S'], year: 2027);
+        $this->participant('Ana Pérez', [10])->update(['contact_id' => $contact->id]);
+        $this->imported('Luis', 'Gómez', ['VIERNES' => 'Sonso'], year: 2027);
+
+        $this->actingAs($this->staff(Roles::ANALYST))->get('/reports?anio=2027')
+            ->assertInertia(fn (Assert $page) => $page->where('summary.participants', 2)->where('summary.trips', 2));
     }
 }

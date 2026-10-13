@@ -33,6 +33,16 @@ return [
     'campaign_emails_per_hour' => (int) env('CRM_CAMPAIGN_EMAILS_PER_HOUR', 90),
 
     /*
+     * Thursday each past fair started, for the reports of attendees imported from its registration master (their
+     * outings and workshops are listed by weekday). A year not listed uses the first Thursday after its last registration.
+     */
+    'fair_start_dates' => [
+        2024 => '2024-02-15',
+        2025 => '2025-02-13',
+        2026 => '2026-02-12',
+    ],
+
+    /*
      * Participant portal ("Inscritos"): read-only lookup by document number behind a human check.
      * With Cloudflare Turnstile keys the check is Turnstile; without them, a simple sum asked by the CRM.
      */
