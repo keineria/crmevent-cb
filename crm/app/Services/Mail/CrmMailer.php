@@ -27,6 +27,20 @@ class CrmMailer
     }
 
     /**
+     * Mailer for the first of the profiles that has a verified configuration.
+     */
+    public function firstActive(string ...$profiles): Mailer
+    {
+        foreach ($profiles as $profile) {
+            if (MailSetting::where('profile', $profile)->first()?->isActive()) {
+                return $this->for($profile);
+            }
+        }
+
+        throw new RuntimeException('Ningún perfil de correo tiene una configuración verificada. Envía un correo de prueba en Configuración › Correo.');
+    }
+
+    /**
      * @param  array<string, mixed>  $config  Output of MailSetting::transportConfig().
      */
     public function build(array $config): Mailer
