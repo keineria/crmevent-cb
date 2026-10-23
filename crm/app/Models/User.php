@@ -3,6 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Mail\PasswordResetMail;
+use App\Services\Mail\CrmMailer;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -37,5 +39,24 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return $this->deactivated_at === null;
+    }
+
+    /**
+     * Reset links go out through the account saved in Configuración › Correo (transactional first,
+     * then the broadcast one), not the server's default mailer.
+     */
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        if (! $this->isActive()) {
+            return;
+        }
+
+        $url = route('password.reset', ['token' => $token, 'email' => $this->email]);
+        $minutes = (int) config('auth.passwords.users.expire', 60);
+
+        app(CrmMailer::class)
+            ->firstActive(MailSetting::PROFILE_TRANSACTIONAL, MailSetting::PROFILE_BROADCAST)
+            ->to($this->email)
+            ->send(new PasswordResetMail($this->name, $url, $minutes));
     }
 }

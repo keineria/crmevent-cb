@@ -49,6 +49,8 @@ final class AuditActions
         'auth.failed' => ['session', 'Intento de acceso fallido'],
         'auth.lockout' => ['session', 'Acceso bloqueado por intentos'],
         'auth.blocked' => ['session', 'Intentó entrar con un usuario desactivado'],
+        'auth.password_reset_requested' => ['session', 'Pidió un enlace para restablecer su contraseña'],
+        'auth.password_reset_failed' => ['session', 'No se pudo enviar el enlace para restablecer la contraseña'],
         'auth.password_reset' => ['session', 'Restableció su contraseña'],
 
         'user.created' => ['user', 'Creó un usuario'],
