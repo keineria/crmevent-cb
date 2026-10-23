@@ -1,4 +1,5 @@
 import Flash from '@/components/campaigns/flash';
+import PurchasedStands, { type Flag, type PurchasedStand } from '@/components/stands/purchased-stands';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
@@ -6,7 +7,7 @@ import { dateTime, number } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, usePage } from '@inertiajs/react';
-import { CircleX, Download, FileUp, LoaderCircle, Search, Trash2 } from 'lucide-react';
+import { CircleX, Download, ExternalLink, FileUp, LoaderCircle, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { type CSSProperties, type KeyboardEvent, useMemo, useRef, useState } from 'react';
 
 /** One cell as the server reads it from the Excel. */
@@ -39,8 +40,22 @@ interface Sheet {
 }
 
 interface PageProps {
-    workbook: { id: number; name: string; original_name: string; edits: number; editor: string | null; updated_at: string };
+    workbook: {
+        id: number;
+        name: string;
+        original_name: string;
+        source: 'excel' | 'google';
+        google_url: string | null;
+        google_sheet: string | null;
+        synced_at: string | null;
+        sync_error: string | null;
+        edits: number;
+        editor: string | null;
+        updated_at: string;
+    };
     sheets: Sheet[];
+    purchases: { columns: string[]; stands: PurchasedStand[] };
+    flags: Record<Flag, string>;
     canEdit: boolean;
     errors: Record<string, string>;
     [key: string]: unknown;
@@ -61,7 +76,10 @@ const normalize = (text: string) =>
         .toLowerCase();
 
 export default function StandShow() {
-    const { workbook, sheets, canEdit, errors } = usePage<PageProps>().props;
+    const { workbook, sheets, purchases, flags, canEdit, errors } = usePage<PageProps>().props;
+    const isGoogle = workbook.source === 'google';
+    // -1 is the Stands comprados tab.
+    const PURCHASES = -1;
     const [active, setActive] = useState(() =>
         Math.max(
             0,
@@ -79,7 +97,7 @@ export default function StandShow() {
     const [saving, setSaving] = useState<string | null>(null);
     const replaceInput = useRef<HTMLInputElement>(null);
 
-    const sheet = sheets[Math.min(active, sheets.length - 1)];
+    const sheet = sheets[Math.max(0, Math.min(active, sheets.length - 1))];
     const columns = Math.max(1, ...sheet.rows.map((r) => r.length));
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -158,8 +176,17 @@ export default function StandShow() {
         router.post(`/stands/${workbook.id}/reemplazar`, { file }, { forceFormData: true, preserveScroll: true });
     };
 
+    const [syncing, setSyncing] = useState(false);
+    const sync = () => {
+        setSyncing(true);
+        router.post(`/stands/${workbook.id}/sincronizar`, {}, { preserveScroll: true, preserveState: true, onFinish: () => setSyncing(false) });
+    };
+
     const remove = () => {
-        if (confirm(`¿Eliminar «${workbook.name}»? Descarga antes el Excel si quieres conservar los cambios.`)) {
+        const question = isGoogle
+            ? `¿Desconectar «${workbook.name}»? La hoja de Google no se toca; se pierden las marcas de Stands comprados.`
+            : `¿Eliminar «${workbook.name}»? Descarga antes el Excel si quieres conservar los cambios.`;
+        if (confirm(question)) {
             router.delete(`/stands/${workbook.id}`);
         }
     };
@@ -173,19 +200,41 @@ export default function StandShow() {
                     <div className="min-w-0 space-y-0.5">
                         <h2 className="truncate text-xl font-semibold tracking-tight">{workbook.name}</h2>
                         <p className="text-muted-foreground text-sm">
-                            {workbook.original_name} · {number.format(workbook.edits)} {workbook.edits === 1 ? 'cambio' : 'cambios'} · actualizado{' '}
+                            {isGoogle ? `Hoja de Google «${workbook.original_name}» · pestaña ${workbook.google_sheet}` : workbook.original_name} ·{' '}
+                            {number.format(workbook.edits)} {workbook.edits === 1 ? 'cambio' : 'cambios'} · actualizado{' '}
                             {dateTime.format(new Date(workbook.updated_at))}
                             {workbook.editor ? ` por ${workbook.editor}` : ''}
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" asChild>
-                            <a href={`/stands/${workbook.id}/descargar`}>
-                                <Download aria-hidden />
-                                Descargar Excel
-                            </a>
-                        </Button>
-                        {canEdit && (
+                        {isGoogle && workbook.google_url && (
+                            <Button variant="outline" asChild>
+                                <a href={workbook.google_url} target="_blank" rel="noreferrer">
+                                    <ExternalLink aria-hidden />
+                                    Abrir en Google
+                                </a>
+                            </Button>
+                        )}
+                        {isGoogle && canEdit && (
+                            <Button variant="outline" disabled={syncing} onClick={sync}>
+                                <RefreshCw className={cn(syncing && 'animate-spin')} aria-hidden />
+                                Sincronizar
+                            </Button>
+                        )}
+                        {isGoogle && canEdit && (
+                            <Button variant="ghost" onClick={remove} aria-label="Desconectar hoja">
+                                <Trash2 aria-hidden />
+                            </Button>
+                        )}
+                        {!isGoogle && (
+                            <Button variant="outline" asChild>
+                                <a href={`/stands/${workbook.id}/descargar`}>
+                                    <Download aria-hidden />
+                                    Descargar Excel
+                                </a>
+                            </Button>
+                        )}
+                        {!isGoogle && canEdit && (
                             <>
                                 <input
                                     ref={replaceInput}
@@ -212,6 +261,14 @@ export default function StandShow() {
                 </div>
 
                 <Flash />
+                {isGoogle && (
+                    <p className={cn('flex items-center gap-2 text-xs', workbook.sync_error ? 'text-destructive' : 'text-muted-foreground')}>
+                        {workbook.sync_error ? <CircleX className="size-4" aria-hidden /> : <RefreshCw className="size-3.5" aria-hidden />}
+                        {workbook.sync_error
+                            ? `No pude leer la hoja de Google: ${workbook.sync_error}`
+                            : `Conectada en los dos sentidos. Leída de Google ${workbook.synced_at ? dateTime.format(new Date(workbook.synced_at)) : '—'}; lo que cambies en Drive llega solo en un minuto.`}
+                    </p>
+                )}
                 {(errors.value || errors.cell || errors.file) && (
                     <p role="alert" className="text-destructive flex items-center gap-2 text-sm">
                         <CircleX className="size-4" aria-hidden />
@@ -239,146 +296,177 @@ export default function StandShow() {
                                 {s.hidden && <span className="text-muted-foreground ml-1 text-xs">(oculta)</span>}
                             </button>
                         ))}
+                        <button
+                            role="tab"
+                            aria-selected={active === PURCHASES}
+                            onClick={() => {
+                                setActive(PURCHASES);
+                                setEditing(null);
+                            }}
+                            className={cn(
+                                'rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors',
+                                active === PURCHASES ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                            )}
+                        >
+                            Stands comprados
+                            <span className="text-muted-foreground ml-1 text-xs">{number.format(purchases.stands.length)}</span>
+                        </button>
                     </div>
-                    <label className="relative w-full sm:w-72">
-                        <span className="sr-only">Buscar en la hoja</span>
-                        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" aria-hidden />
-                        <Input
-                            type="search"
-                            className="pl-9"
-                            placeholder="Buscar en la hoja"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                        />
-                    </label>
+                    {active !== PURCHASES && (
+                        <label className="relative w-full sm:w-72">
+                            <span className="sr-only">Buscar en la hoja</span>
+                            <Search
+                                className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                                aria-hidden
+                            />
+                            <Input
+                                type="search"
+                                className="pl-9"
+                                placeholder="Buscar en la hoja"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                            />
+                        </label>
+                    )}
                 </div>
 
-                <p className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                    <span className="inline-flex items-center gap-1.5">
-                        <span className="bg-muted inline-flex h-4 items-center rounded px-1 font-mono text-[10px] italic">fx</span>
-                        Fórmula: se calcula sola
-                    </span>
-                    {canEdit && <span>Haz clic en una celda para editarla. Enter guarda y baja, Tab guarda y pasa a la derecha, Esc cancela.</span>}
-                    {sheet.truncated && <span>Esta hoja es muy grande: se muestran las primeras filas y columnas.</span>}
-                </p>
+                {active === PURCHASES ? (
+                    <PurchasedStands workbookId={workbook.id} columns={purchases.columns} stands={purchases.stands} flags={flags} canEdit={canEdit} />
+                ) : (
+                    <>
+                        <p className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                            <span className="inline-flex items-center gap-1.5">
+                                <span className="bg-muted inline-flex h-4 items-center rounded px-1 font-mono text-[10px] italic">fx</span>
+                                Fórmula: se calcula sola
+                            </span>
+                            {canEdit && (
+                                <span>Haz clic en una celda para editarla. Enter guarda y baja, Tab guarda y pasa a la derecha, Esc cancela.</span>
+                            )}
+                            {sheet.truncated && <span>Esta hoja es muy grande: se muestran las primeras filas y columnas.</span>}
+                        </p>
 
-                <div className="max-h-[70vh] overflow-auto rounded-lg border">
-                    <table className="border-separate border-spacing-0 text-sm">
-                        <thead>
-                            <tr>
-                                <th className="bg-muted sticky top-0 left-0 z-30 w-12 min-w-12 border-r border-b" aria-label="Fila" />
-                                {Array.from({ length: columns }, (_, c) => (
-                                    <th
-                                        key={c}
-                                        scope="col"
-                                        className="bg-muted text-muted-foreground sticky top-0 z-20 border-r border-b px-2 py-1 text-center text-xs font-medium"
-                                        style={{ minWidth: Math.max(sheet.widths[c] ?? 96, 56) }}
-                                    >
-                                        {columnName(c)}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {visibleRows.map((r) => (
-                                <tr key={r}>
-                                    <th
-                                        scope="row"
-                                        className="bg-muted text-muted-foreground sticky left-0 z-10 border-r border-b px-2 py-1 text-right text-xs font-medium"
-                                    >
-                                        {r + 1}
-                                    </th>
-                                    {Array.from({ length: columns }, (_, c) => {
-                                        const key = `${r}:${c}`;
-                                        if (covered.has(key)) return null;
-                                        const cell = sheet.rows[r]?.[c] ?? null;
-                                        const span = spans.get(key);
-                                        const isEditing = editing?.r === r && editing.c === c;
-                                        const canChange = editable(cell);
-                                        const coordinate = `${columnName(c)}${r + 1}`;
-                                        const style: CSSProperties = cell?.bg && !isEditing ? { backgroundColor: cell.bg, color: '#111827' } : {};
-                                        const align = cell?.a ?? (cell && cell.k !== 's' ? 'right' : 'left');
-
-                                        return (
-                                            <td
+                        <div className="max-h-[70vh] overflow-auto rounded-lg border">
+                            <table className="border-separate border-spacing-0 text-sm">
+                                <thead>
+                                    <tr>
+                                        <th className="bg-muted sticky top-0 left-0 z-30 w-12 min-w-12 border-r border-b" aria-label="Fila" />
+                                        {Array.from({ length: columns }, (_, c) => (
+                                            <th
                                                 key={c}
-                                                rowSpan={span?.[0]}
-                                                colSpan={span?.[1]}
-                                                style={style}
-                                                title={cell?.f ? `${coordinate}: ${cell.f}` : undefined}
-                                                className={cn(
-                                                    'relative h-8 border-r border-b px-2 py-1 whitespace-nowrap',
-                                                    cell?.b && 'font-semibold',
-                                                    cell?.f && !cell.bg && 'bg-muted/60',
-                                                    cell?.x && 'text-destructive',
-                                                    canChange && !isEditing && 'hover:ring-primary/50 cursor-cell hover:ring-1 hover:ring-inset',
-                                                    saving === key && 'opacity-50',
-                                                    isEditing && 'p-0',
-                                                )}
-                                                onClick={() => !isEditing && startEdit(r, c)}
+                                                scope="col"
+                                                className="bg-muted text-muted-foreground sticky top-0 z-20 border-r border-b px-2 py-1 text-center text-xs font-medium"
+                                                style={{ minWidth: Math.max(sheet.widths[c] ?? 96, 56) }}
                                             >
-                                                {isEditing ? (
-                                                    cell?.l !== undefined ? (
-                                                        <select
-                                                            autoFocus
-                                                            aria-label={`Celda ${coordinate}`}
-                                                            className="bg-background ring-primary h-8 w-full px-2 ring-2 outline-none ring-inset"
-                                                            value={editing.value}
-                                                            onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                                                            onBlur={() => save()}
-                                                            onKeyDown={onKeyDown}
-                                                        >
-                                                            <option value="" />
-                                                            {sheet.lists[cell.l].map((o) => (
-                                                                <option key={o} value={o}>
-                                                                    {o}
-                                                                </option>
-                                                            ))}
-                                                            {editing.value && !sheet.lists[cell.l].includes(editing.value) && (
-                                                                <option value={editing.value}>{editing.value}</option>
-                                                            )}
-                                                        </select>
-                                                    ) : (
-                                                        <input
-                                                            autoFocus
-                                                            aria-label={`Celda ${coordinate}`}
-                                                            className="bg-background ring-primary h-8 w-full min-w-full px-2 ring-2 outline-none ring-inset"
-                                                            style={{ textAlign: align }}
-                                                            value={editing.value}
-                                                            placeholder={cell?.k === 'd' ? 'AAAA-MM-DD' : undefined}
-                                                            onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                                                            onBlur={() => save()}
-                                                            onKeyDown={onKeyDown}
-                                                        />
-                                                    )
-                                                ) : (
-                                                    <span
-                                                        className="flex items-center gap-1"
-                                                        style={{
-                                                            justifyContent:
-                                                                align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
-                                                        }}
+                                                {columnName(c)}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {visibleRows.map((r) => (
+                                        <tr key={r}>
+                                            <th
+                                                scope="row"
+                                                className="bg-muted text-muted-foreground sticky left-0 z-10 border-r border-b px-2 py-1 text-right text-xs font-medium"
+                                            >
+                                                {r + 1}
+                                            </th>
+                                            {Array.from({ length: columns }, (_, c) => {
+                                                const key = `${r}:${c}`;
+                                                if (covered.has(key)) return null;
+                                                const cell = sheet.rows[r]?.[c] ?? null;
+                                                const span = spans.get(key);
+                                                const isEditing = editing?.r === r && editing.c === c;
+                                                const canChange = editable(cell);
+                                                const coordinate = `${columnName(c)}${r + 1}`;
+                                                const style: CSSProperties =
+                                                    cell?.bg && !isEditing ? { backgroundColor: cell.bg, color: '#111827' } : {};
+                                                const align = cell?.a ?? (cell && cell.k !== 's' ? 'right' : 'left');
+
+                                                return (
+                                                    <td
+                                                        key={c}
+                                                        rowSpan={span?.[0]}
+                                                        colSpan={span?.[1]}
+                                                        style={style}
+                                                        title={cell?.f ? `${coordinate}: ${cell.f}` : undefined}
+                                                        className={cn(
+                                                            'relative h-8 border-r border-b px-2 py-1 whitespace-nowrap',
+                                                            cell?.b && 'font-semibold',
+                                                            cell?.f && !cell.bg && 'bg-muted/60',
+                                                            cell?.x && 'text-destructive',
+                                                            canChange &&
+                                                                !isEditing &&
+                                                                'hover:ring-primary/50 cursor-cell hover:ring-1 hover:ring-inset',
+                                                            saving === key && 'opacity-50',
+                                                            isEditing && 'p-0',
+                                                        )}
+                                                        onClick={() => !isEditing && startEdit(r, c)}
                                                     >
-                                                        {cell?.f && (
-                                                            <span className="text-muted-foreground font-mono text-[10px] italic" aria-hidden>
-                                                                fx
+                                                        {isEditing ? (
+                                                            cell?.l !== undefined ? (
+                                                                <select
+                                                                    autoFocus
+                                                                    aria-label={`Celda ${coordinate}`}
+                                                                    className="bg-background ring-primary h-8 w-full px-2 ring-2 outline-none ring-inset"
+                                                                    value={editing.value}
+                                                                    onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                                                                    onBlur={() => save()}
+                                                                    onKeyDown={onKeyDown}
+                                                                >
+                                                                    <option value="" />
+                                                                    {sheet.lists[cell.l].map((o) => (
+                                                                        <option key={o} value={o}>
+                                                                            {o}
+                                                                        </option>
+                                                                    ))}
+                                                                    {editing.value && !sheet.lists[cell.l].includes(editing.value) && (
+                                                                        <option value={editing.value}>{editing.value}</option>
+                                                                    )}
+                                                                </select>
+                                                            ) : (
+                                                                <input
+                                                                    autoFocus
+                                                                    aria-label={`Celda ${coordinate}`}
+                                                                    className="bg-background ring-primary h-8 w-full min-w-full px-2 ring-2 outline-none ring-inset"
+                                                                    style={{ textAlign: align }}
+                                                                    value={editing.value}
+                                                                    placeholder={cell?.k === 'd' ? 'AAAA-MM-DD' : undefined}
+                                                                    onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                                                                    onBlur={() => save()}
+                                                                    onKeyDown={onKeyDown}
+                                                                />
+                                                            )
+                                                        ) : (
+                                                            <span
+                                                                className="flex items-center gap-1"
+                                                                style={{
+                                                                    justifyContent:
+                                                                        align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
+                                                                }}
+                                                            >
+                                                                {cell?.f && (
+                                                                    <span className="text-muted-foreground font-mono text-[10px] italic" aria-hidden>
+                                                                        fx
+                                                                    </span>
+                                                                )}
+                                                                {saving === key ? (
+                                                                    <LoaderCircle className="size-3 animate-spin" aria-label="Guardando" />
+                                                                ) : (
+                                                                    cell?.v
+                                                                )}
                                                             </span>
                                                         )}
-                                                        {saving === key ? (
-                                                            <LoaderCircle className="size-3 animate-spin" aria-label="Guardando" />
-                                                        ) : (
-                                                            cell?.v
-                                                        )}
-                                                    </span>
-                                                )}
-                                            </td>
-                                        );
-                                    })}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
             </div>
         </AppLayout>
     );

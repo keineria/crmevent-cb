@@ -250,7 +250,7 @@ class StandSpreadsheet
         return $date->format($hasTime ? 'Y-m-d H:i' : 'Y-m-d');
     }
 
-    private static function numberText(int|float $number): string
+    public static function numberText(int|float $number): string
     {
         if (is_float($number)) {
             $number = round($number, 10);
