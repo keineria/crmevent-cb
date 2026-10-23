@@ -4,7 +4,11 @@ namespace App\Http\Controllers\Stands;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\StandPurchase;
 use App\Models\StandWorkbook;
+use App\Services\Stands\GoogleSheetsClient;
+use App\Services\Stands\GoogleStandSheet;
+use App\Services\Stands\StandPurchases;
 use App\Services\Stands\StandSpreadsheet;
 use App\Support\Roles;
 use DomainException;
@@ -16,6 +20,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
@@ -32,6 +37,7 @@ class StandWorkbookController extends Controller
                     'id' => $w->id,
                     'name' => $w->name,
                     'original_name' => $w->original_name,
+                    'source' => $w->source,
                     'sheets' => collect($w->sheets)->pluck('name'),
                     'edits' => $w->edits,
                     'creator' => $w->creator?->name,
@@ -40,21 +46,37 @@ class StandWorkbookController extends Controller
                     'updated_at' => $w->updated_at->toIso8601String(),
                 ]),
             'canEdit' => $request->user()->hasAnyRole(Roles::STAND_EDITORS),
+            'google' => [
+                'email' => GoogleSheetsClient::account()['client_email'] ?? null,
+                'canConfigure' => $request->user()->hasRole(Roles::ADMIN),
+            ],
         ]);
     }
 
-    public function show(Request $request, StandWorkbook $workbook): Response
+    public function show(Request $request, StandWorkbook $workbook, GoogleStandSheet $google): Response
     {
+        // A connected sheet is read again on open, so what was changed in Drive shows up right away.
+        if ($workbook->isGoogle() && (! $workbook->synced_at || $workbook->synced_at->lt(now()->subSeconds(20)))) {
+            $google->pull($workbook);
+        }
+
         return Inertia::render('stands/show', [
             'workbook' => [
                 'id' => $workbook->id,
                 'name' => $workbook->name,
                 'original_name' => $workbook->original_name,
+                'source' => $workbook->source,
+                'google_url' => $workbook->googleUrl(),
+                'google_sheet' => $workbook->google_sheet,
+                'synced_at' => $workbook->synced_at?->toIso8601String(),
+                'sync_error' => $workbook->sync_error,
                 'edits' => $workbook->edits,
                 'editor' => $workbook->editor?->name,
                 'updated_at' => $workbook->updated_at->toIso8601String(),
             ],
             'sheets' => $workbook->sheets,
+            'purchases' => StandPurchases::for($workbook),
+            'flags' => StandPurchase::FLAGS,
             'canEdit' => $request->user()->hasAnyRole(Roles::STAND_EDITORS),
         ]);
     }
@@ -93,6 +115,7 @@ class StandWorkbookController extends Controller
     /** Swaps the book for a newer version of the Excel, keeping its place and history. */
     public function replace(Request $request, StandWorkbook $workbook): RedirectResponse
     {
+        abort_if($workbook->isGoogle(), 404);
         $data = $request->validate([
             'file' => ['required', 'file', 'max:20480', 'mimes:xlsx,xls,ods'],
         ], [], ['file' => 'archivo']);
@@ -121,13 +144,27 @@ class StandWorkbookController extends Controller
         return back()->with('success', "Excel «{$workbook->name}» reemplazado.");
     }
 
-    public function updateCell(Request $request, StandWorkbook $workbook): RedirectResponse
+    public function updateCell(Request $request, StandWorkbook $workbook, GoogleStandSheet $google): RedirectResponse
     {
         $data = $request->validate([
             'sheet' => ['required', 'integer', 'min:0'],
             'cell' => ['required', 'string', 'regex:/^[A-Z]{1,3}[1-9]\d{0,6}$/'],
             'value' => ['nullable', 'string', 'max:5000'],
         ]);
+
+        if ($workbook->isGoogle()) {
+            try {
+                $change = $google->setValue($workbook, $data['cell'], $data['value'] ?? null);
+            } catch (DomainException|RuntimeException $e) {
+                return back()->withErrors(['value' => $e->getMessage()]);
+            }
+            $workbook->forceFill(['updated_by' => $request->user()->id])->save();
+            if ($change['antes'] !== $change['despues']) {
+                AuditLog::record('stands.cell_updated', $workbook, ['hoja' => $change['hoja'], 'celda' => $data['cell'], 'antes' => Str::limit($change['antes'], 200), 'despues' => Str::limit($change['despues'], 200)]);
+            }
+
+            return back();
+        }
 
         try {
             $change = Cache::lock("stand-workbook-{$workbook->id}", 30)->block(15, function () use ($workbook, $data, $request) {
@@ -157,6 +194,7 @@ class StandWorkbookController extends Controller
 
     public function download(StandWorkbook $workbook): BinaryFileResponse
     {
+        abort_if($workbook->isGoogle(), 404);
         AuditLog::record('stands.downloaded', $workbook);
 
         return response()->download($workbook->absolutePath(), Str::slug($workbook->name).'.xlsx');

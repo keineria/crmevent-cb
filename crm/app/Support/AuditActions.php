@@ -130,6 +130,9 @@ final class AuditActions
         'stands.cell_updated' => ['stands', 'Editó una celda del stand comercial'],
         'stands.downloaded' => ['stands', 'Descargó un Excel del stand comercial'],
         'stands.deleted' => ['stands', 'Borró un Excel del stand comercial'],
+        'stands.google_key' => ['stands', 'Cambió la clave de Google del stand comercial'],
+        'stands.google_connected' => ['stands', 'Conectó una hoja de Google al stand comercial'],
+        'stands.purchase_updated' => ['stands', 'Marcó el seguimiento de un stand comprado'],
 
         'audit.exported' => ['settings', 'Descargó la auditoría'],
         'mail_setting.updated' => ['settings', 'Cambió el correo de envíos'],

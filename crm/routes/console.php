@@ -2,6 +2,7 @@
 
 use App\Jobs\SyncPluginRegistrations;
 use App\Models\PluginConnection;
+use App\Models\StandWorkbook;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -24,3 +25,9 @@ Schedule::command('contacts:refresh-insights')->hourly()->withoutOverlapping();
 
 // Satisfaction survey of each activity once it ends (Encuestas), to the people checked in, paced like the certificates.
 Schedule::command('surveys:send')->everyFiveMinutes()->withoutOverlapping();
+
+// Stand comercial books connected to a Google Sheet: bring in what was changed in Drive.
+Schedule::command('stands:sync')
+    ->everyMinute()
+    ->when(fn () => StandWorkbook::query()->where('source', StandWorkbook::SOURCE_GOOGLE)->exists())
+    ->withoutOverlapping();

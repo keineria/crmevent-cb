@@ -79,4 +79,12 @@ return [
             'class_suffix' => env('GOOGLE_WALLET_CLASS', 'colombia-birdfair'),
         ],
     ],
+
+    /*
+     * Stand comercial: a tab of a Google Sheet kept in sync both ways. The service account key can be uploaded in
+     * Stand comercial; this path is used when none was uploaded (the Google Wallet key works if Sheets API is on).
+     */
+    'stands' => [
+        'google_service_account' => env('GOOGLE_SHEETS_SERVICE_ACCOUNT', env('GOOGLE_WALLET_SERVICE_ACCOUNT')),
+    ],
 ];
