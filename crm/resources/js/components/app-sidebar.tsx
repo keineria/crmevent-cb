@@ -20,7 +20,7 @@ const SURVEY_VIEWERS = ['Admin', 'Admin registro', 'Analista', 'Marketing'];
 const STAND_VIEWERS = ['Admin', 'Admin registro', 'Analista', 'Marketing'];
 
 export function AppSidebar() {
-    const { auth } = usePage<SharedData>().props;
+    const { auth, branding } = usePage<SharedData>().props;
     const mainNavItems: NavItem[] = [
         { title: 'Resumen', url: '/dashboard', icon: LayoutGrid },
         ...(auth.roles.some((r) => CHECKIN_STAFF.includes(r)) ? [{ title: 'Check-in', url: '/checkin', icon: ScanLine }] : []),
@@ -53,9 +53,9 @@ export function AppSidebar() {
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
+                        <SidebarMenuButton size="lg" asChild className={branding?.platform ? 'h-auto' : undefined}>
                             <Link href="/dashboard" prefetch>
-                                <AppLogo />
+                                <AppLogo imageClassName="h-16 max-w-[220px] group-data-[collapsible=icon]:h-8" />
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>

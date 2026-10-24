@@ -2,12 +2,12 @@ import { type SharedData } from '@/types';
 import { usePage } from '@inertiajs/react';
 import AppLogoIcon from './app-logo-icon';
 
-export default function AppLogo() {
+export default function AppLogo({ imageClassName = 'h-8 max-w-[180px]' }: { imageClassName?: string }) {
     const { branding } = usePage<SharedData>().props;
 
     // A logo uploaded in Configuración › Marca replaces the icon and name.
     if (branding?.platform) {
-        return <img src={branding.platform} alt="CRM 360 · Birdfair" className="h-8 max-w-[180px] object-contain object-left" />;
+        return <img src={branding.platform} alt="CRM 360 · Birdfair" className={`${imageClassName} object-contain object-left`} />;
     }
 
     return (
