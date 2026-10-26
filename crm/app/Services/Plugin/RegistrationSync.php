@@ -2,6 +2,7 @@
 
 namespace App\Services\Plugin;
 
+use App\Models\AuditLog;
 use App\Models\Contact;
 use App\Models\ContactEdition;
 use App\Models\EventActivity;
@@ -20,21 +21,26 @@ use Throwable;
 /**
  * Pulls activities and registrations from the plugin into the CRM. The plugin stays the source of truth:
  * this only mirrors what it reports, upserting by plugin ids so running it twice changes nothing.
+ * Orders deleted in WooCommerce are removed here too, and a contact's fair history from the plugin always
+ * follows their paid orders: cancelling, refunding, trashing or deleting the order takes that year away.
  */
 class RegistrationSync
 {
     /** Safety limit per run; the next run continues from the saved cursor. */
     private const MAX_PAGES = 40;
 
+    /** Marks the fair-history rows this sync writes, so it only ever removes its own. */
+    public const EDITION_SOURCE = 'Plugin de inscripciones';
+
     public function __construct(private ContactMatcher $matcher, private ContactInsights $insights) {}
 
     /**
-     * @return array{activities: int, orders: int, participants: int, new_contacts: int, has_more: bool}
+     * @return array{activities: int, orders: int, participants: int, new_contacts: int, removed: int, has_more: bool}
      */
     public function run(PluginConnection $connection, ?EvrClient $client = null): array
     {
         $client ??= EvrClient::for($connection);
-        $result = ['activities' => 0, 'orders' => 0, 'participants' => 0, 'new_contacts' => 0, 'has_more' => false];
+        $result = ['activities' => 0, 'orders' => 0, 'participants' => 0, 'new_contacts' => 0, 'removed' => 0, 'has_more' => false];
 
         try {
             foreach ($client->activities() as $activity) {
@@ -53,6 +59,10 @@ class RegistrationSync
                         $this->upsertOrder($order, $result);
                     });
                     $result['orders']++;
+                }
+
+                foreach ($batch['deleted'] as $orderId) {
+                    $result['removed'] += $this->removeOrder($orderId) ? 1 : 0;
                 }
 
                 if ($batch['next_cursor']) {
@@ -87,13 +97,97 @@ class RegistrationSync
     }
 
     /**
+     * Asks the plugin about every order the CRM has, to catch what the cursor can't see: orders deleted or
+     * trashed in WooCommerce before bridge 1.2, or while the sync was off. Missing orders are removed; the rest
+     * are mirrored again (a trashed order keeps its status "trash" and stops counting as a purchase). Then every
+     * contact's history from the plugin is checked against their paid orders.
+     *
+     * @return array{checked: int, updated: int, removed: int, contacts: int}
+     */
+    public function reconcile(PluginConnection $connection, ?EvrClient $client = null): array
+    {
+        $client ??= EvrClient::for($connection);
+        $result = ['checked' => 0, 'updated' => 0, 'removed' => 0, 'contacts' => 0];
+
+        try {
+            $statuses = Registration::query()->pluck('status', 'wc_order_id');
+            $sink = ['activities' => 0, 'orders' => 0, 'participants' => 0, 'new_contacts' => 0, 'removed' => 0, 'has_more' => false];
+
+            foreach ($statuses->keys()->chunk(100) as $ids) {
+                $batch = $client->lookupOrders($ids->map(fn ($id) => (int) $id)->values()->all());
+
+                foreach ($batch['data'] as $order) {
+                    DB::transaction(fn () => $this->upsertOrder($order, $sink));
+                    $result['checked']++;
+                    $result['updated'] += ($statuses[(int) $order['id']] ?? null) !== (string) ($order['status'] ?? '') ? 1 : 0;
+                }
+
+                foreach ($batch['missing'] as $orderId) {
+                    $result['checked']++;
+                    $result['removed'] += $this->removeOrder($orderId) ? 1 : 0;
+                }
+            }
+
+            // History left behind by cancellations and retired enrollments mirrored before this existed.
+            Contact::query()
+                ->whereHas('editions', fn ($q) => $q->where('role', ContactEdition::ROLE_ATTENDEE)->whereNull('contact_import_id'))
+                ->chunkById(200, function ($contacts) use (&$result) {
+                    foreach ($contacts as $contact) {
+                        $result['contacts'] += $this->refreshHistory($contact) ? 1 : 0;
+                    }
+                });
+
+            $connection->forceFill(['last_reconciled_at' => now(), 'last_reconcile_result' => $result])->save();
+        } catch (Throwable $e) {
+            $connection->forceFill([
+                'last_reconciled_at' => now(),
+                'last_reconcile_result' => [...$result, 'error' => Str::limit($e->getMessage(), 500)],
+            ])->save();
+
+            throw $e;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Removes an order deleted in WooCommerce with its participants, activities and check-ins, and takes it out
+     * of the history of the people in it. Returns false when the CRM didn't have it.
+     */
+    public function removeOrder(int $wcOrderId): bool
+    {
+        $registration = Registration::with('participants')->firstWhere('wc_order_id', $wcOrderId);
+        if (! $registration) {
+            return false;
+        }
+
+        $contactIds = $registration->participants->pluck('contact_id')->push($registration->buyer_contact_id)->filter()->unique();
+
+        DB::transaction(function () use ($registration, $contactIds) {
+            $registration->delete();
+
+            foreach (Contact::whereIn('id', $contactIds)->get() as $contact) {
+                $this->refreshHistory($contact);
+            }
+        });
+
+        AuditLog::record('plugin.order-removed', null, [
+            'pedido' => '#'.$registration->number,
+            'estado' => $registration->status,
+            'participantes' => $registration->participants->pluck('full_name')->filter()->values()->all(),
+        ]);
+
+        return true;
+    }
+
+    /**
      * Mirrors orders the plugin just returned after a change made from the CRM, without waiting for the next sync.
      *
      * @param  list<array<string, mixed>>  $orders  Items in the shape of GET /orders.
      */
     public function applyOrders(array $orders): void
     {
-        $result = ['activities' => 0, 'orders' => 0, 'participants' => 0, 'new_contacts' => 0, 'has_more' => false];
+        $result = ['activities' => 0, 'orders' => 0, 'participants' => 0, 'new_contacts' => 0, 'removed' => 0, 'has_more' => false];
 
         foreach ($orders as $order) {
             DB::transaction(fn () => $this->upsertOrder($order, $result));
@@ -141,6 +235,8 @@ class RegistrationSync
 
         $paid = $registration->isPaid();
         $buyer = null;
+        // Whoever was in the order before this update, in case someone left it.
+        $touched = RegistrationParticipant::where('registration_id', $registration->id)->whereNotNull('contact_id')->pluck('contact_id')->all();
 
         foreach ($order['participants'] ?? [] as $p) {
             $contact = $this->contactFor($p, $billing, $paid, $result);
@@ -162,7 +258,6 @@ class RegistrationSync
             ]);
             $result['participants']++;
 
-            $active = [];
             foreach ($p['activities'] ?? [] as $a) {
                 RegistrationActivity::updateOrCreate(['evr_assignment_id' => (int) $a['assignment_id']], [
                     'registration_participant_id' => $participant->id,
@@ -177,13 +272,10 @@ class RegistrationSync
                     'total' => (float) ($a['total'] ?? 0),
                     'discount_label' => ($a['discount_label'] ?? null) ?: null,
                 ]);
-                if (in_array($a['status'] ?? '', RegistrationActivity::ACTIVE_STATUSES, true)) {
-                    $active[] = $a['name'] ?? 'Actividad';
-                }
             }
 
-            if ($contact && $paid && $active && $registration->edition_year) {
-                $this->recordEdition($contact, $registration, $p, $active);
+            if ($contact) {
+                $touched[] = $contact->id;
             }
 
             if ($contact && $contact->email && $contact->email === $this->email($billing['email'] ?? null)) {
@@ -192,6 +284,10 @@ class RegistrationSync
         }
 
         $registration->forceFill(['buyer_contact_id' => $buyer?->id ?? $registration->buyer_contact_id])->save();
+
+        foreach (Contact::whereIn('id', array_unique($touched))->get() as $contact) {
+            $this->refreshHistory($contact);
+        }
     }
 
     /**
@@ -253,26 +349,58 @@ class RegistrationSync
     }
 
     /**
-     * @param  array<string, mixed>  $p
-     * @param  list<string>  $activities
+     * Rebuilds the contact's fair history from the plugin out of their paid orders with an active activity: one
+     * attendee row per edition year. Years with no such order left lose the row this sync wrote (rows from Excel
+     * imports or typed by staff stay). Returns whether a year was removed.
      */
-    private function recordEdition(Contact $contact, Registration $registration, array $p, array $activities): void
+    public function refreshHistory(Contact $contact): bool
     {
-        if (! $contact->is_attendee) {
-            $contact->forceFill(['is_attendee' => true])->save();
+        $byYear = RegistrationParticipant::query()
+            ->where('contact_id', $contact->id)
+            ->whereHas('registration', fn ($q) => $q->whereIn('status', Registration::PAID_STATUSES)->whereNotNull('edition_year'))
+            ->with(['registration', 'activities' => fn ($q) => $q->whereIn('status', RegistrationActivity::ACTIVE_STATUSES)])
+            ->get()
+            ->filter(fn (RegistrationParticipant $p) => $p->activities->isNotEmpty())
+            ->sortBy(fn (RegistrationParticipant $p) => [$p->registration->ordered_at?->timestamp ?? 0, $p->id])
+            ->groupBy(fn (RegistrationParticipant $p) => $p->registration->edition_year);
+
+        foreach ($byYear as $year => $participants) {
+            $latest = $participants->last();
+            $edition = ContactEdition::firstOrNew(['contact_id' => $contact->id, 'year' => (int) $year, 'role' => ContactEdition::ROLE_ATTENDEE]);
+            $edition->details = array_merge($edition->details ?? [], array_filter([
+                'Pedido' => $participants->map(fn ($p) => '#'.$p->registration->number)->unique()->implode(', '),
+                'Actividades' => $participants->flatMap(fn ($p) => $p->activities->map(fn ($a) => $a->name ?: 'Actividad'))->unique()->implode(' · '),
+                'Camisa' => $latest->shirt_size,
+                'Alimentación' => $latest->meal_type,
+                'Fuente' => self::EDITION_SOURCE,
+            ]));
+            $edition->save();
         }
 
-        $edition = ContactEdition::firstOrNew(['contact_id' => $contact->id, 'year' => $registration->edition_year, 'role' => ContactEdition::ROLE_ATTENDEE]);
-        $edition->details = array_merge($edition->details ?? [], array_filter([
-            'Pedido' => '#'.$registration->number,
-            'Actividades' => implode(' · ', array_unique($activities)),
-            'Camisa' => $p['shirt_size'] ?? null,
-            'Alimentación' => $p['meal_type'] ?? null,
-            'Fuente' => 'Plugin de inscripciones',
-        ]));
-        $edition->save();
+        $removed = false;
+        $stale = $contact->editions()
+            ->where('role', ContactEdition::ROLE_ATTENDEE)
+            ->whereNull('contact_import_id')
+            ->whereNotIn('year', $byYear->keys()->map(fn ($y) => (int) $y)->all())
+            ->get()
+            ->filter(fn (ContactEdition $e) => ($e->details['Fuente'] ?? null) === self::EDITION_SOURCE);
+
+        foreach ($stale as $edition) {
+            $edition->delete();
+            $removed = true;
+        }
+
+        $isAttendee = $contact->editions()->where('role', ContactEdition::ROLE_ATTENDEE)->exists();
+        if ($byYear->isNotEmpty() && ! $contact->is_attendee) {
+            $contact->forceFill(['is_attendee' => true])->save();
+        } elseif ($removed && ! $isAttendee && $contact->is_attendee) {
+            // The removed purchase was what made them an attendee.
+            $contact->forceFill(['is_attendee' => false])->save();
+        }
 
         $this->insights->refresh($contact);
+
+        return $removed;
     }
 
     /**

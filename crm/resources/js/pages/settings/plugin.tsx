@@ -20,7 +20,9 @@ interface Connection {
     last_synced_at: string | null;
     last_status: 'ok' | 'error' | null;
     last_error: string | null;
-    last_result: { activities: number; orders: number; participants: number; new_contacts: number; has_more: boolean } | null;
+    last_result: { activities: number; orders: number; participants: number; new_contacts: number; removed?: number; has_more: boolean } | null;
+    last_reconciled_at: string | null;
+    last_reconcile_result: { checked: number; updated: number; removed: number; contacts: number; error?: string } | null;
 }
 
 interface PageProps {
@@ -35,7 +37,7 @@ const dateFormat = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeS
 
 export default function PluginSettings() {
     const { connection, counts, flash } = usePage<PageProps>().props;
-    const [busy, setBusy] = useState<'test' | 'sync' | null>(null);
+    const [busy, setBusy] = useState<'test' | 'sync' | 'reconcile' | null>(null);
     const { data, setData, put, processing, errors } = useForm({
         base_url: connection.base_url ?? '',
         api_key: '',
@@ -48,7 +50,7 @@ export default function PluginSettings() {
         put('/settings/plugin', { preserveScroll: true, onSuccess: () => setData('api_key', '') });
     };
 
-    const action = (kind: 'test' | 'sync', extra: Record<string, boolean> = {}) => {
+    const action = (kind: 'test' | 'sync' | 'reconcile', extra: Record<string, boolean> = {}) => {
         setBusy(kind);
         router.post(`/settings/plugin/${kind}`, extra, { preserveScroll: true, onFinish: () => setBusy(null) });
     };
@@ -151,6 +153,7 @@ export default function PluginSettings() {
                             <p className="text-success text-sm">
                                 Última vez: {connection.last_result.orders} pedidos, {connection.last_result.participants} participantes,{' '}
                                 {connection.last_result.new_contacts} contactos nuevos y {connection.last_result.activities} actividades.
+                                {!!connection.last_result.removed && ` Se quitaron ${connection.last_result.removed} pedidos borrados en WordPress.`}
                                 {connection.last_result.has_more && ' Quedan más; se siguen trayendo.'}
                             </p>
                         )}
@@ -172,6 +175,27 @@ export default function PluginSettings() {
                                 Volver a traer todo
                             </Button>
                         </div>
+                    </section>
+
+                    <section className="space-y-3 border-t pt-6">
+                        <h3 className="text-sm font-medium">Pedidos borrados en WordPress</h3>
+                        <p className="text-muted-foreground text-sm">
+                            Cada hora el CRM pregunta por todos sus pedidos. Los que se borraron en WordPress desaparecen del CRM, y los que están en
+                            la papelera, cancelados o reembolsados dejan de contar como compra en la ficha del contacto. Necesita el plugin EVR CRM
+                            Bridge 1.2 o superior.
+                        </p>
+                        {connection.last_reconciled_at && connection.last_reconcile_result && (
+                            <p className={connection.last_reconcile_result.error ? 'text-destructive text-sm' : 'text-success text-sm'}>
+                                Última revisión: {dateFormat.format(new Date(connection.last_reconciled_at))}.{' '}
+                                {connection.last_reconcile_result.error
+                                    ? `Error: ${connection.last_reconcile_result.error}`
+                                    : `${connection.last_reconcile_result.checked} pedidos revisados, ${connection.last_reconcile_result.removed} quitados, ${connection.last_reconcile_result.updated} con estado nuevo y ${connection.last_reconcile_result.contacts} contactos corregidos.`}
+                            </p>
+                        )}
+                        <Button variant="outline" onClick={() => action('reconcile')} disabled={busy !== null || !connection.has_key}>
+                            {busy === 'reconcile' && <LoaderCircle className="animate-spin" aria-hidden />}
+                            Revisar borrados ahora
+                        </Button>
                     </section>
                 </div>
             </SettingsLayout>

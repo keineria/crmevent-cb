@@ -55,4 +55,5 @@ Route::middleware(['auth', 'role:'.Roles::ADMIN])->group(function () {
     Route::get('settings/audit/export', [AuditLogController::class, 'export'])->middleware('throttle:10,1')->name('audit.export');
 
     Route::post('settings/plugin/sync', [PluginConnectionController::class, 'sync'])->middleware('throttle:10,1')->name('plugin-connection.sync');
+    Route::post('settings/plugin/reconcile', [PluginConnectionController::class, 'reconcile'])->middleware('throttle:10,1')->name('plugin-connection.reconcile');
 });

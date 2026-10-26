@@ -4,7 +4,7 @@ Tags: woocommerce, crm, api, inscripciones
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,7 @@ Conecta EVR Event Registration con el CRM 360 mediante una API REST protegida co
 Complemento para sitios que usan WooCommerce y el plugin EVR Event Registration. Expone una API REST protegida con clave para que el CRM 360 descargue las actividades, los pedidos, los participantes y sus inscripciones.
 
 * Las rutas de lectura no modifican nada (compatible con HPOS).
+* Cuando un pedido pasa a la papelera, se restaura o se borra, el CRM se entera en la siguiente sincronización.
 * Las rutas de escritura usan los servicios de EVR (cupos, transacciones e historial), firmadas por el usuario elegido en Ajustes › CRM 360. Sin ese usuario, el CRM solo puede leer.
 * Todas las rutas requieren la clave de API.
 
@@ -22,7 +23,8 @@ Rutas disponibles (prefijo `/wp-json/evr-crm/v1`):
 
 * `GET /ping` — comprueba la conexión.
 * `GET /activities` — lista de actividades, incluidas las archivadas.
-* `GET /orders` — pedidos con participantes y actividades, paginados por cursor (`after_updated`, `after_order`, `created_after`, `limit`).
+* `GET /orders` — pedidos con participantes y actividades, paginados por cursor (`after_updated`, `after_order`, `created_after`, `limit`). La lista `deleted` trae los pedidos que se borraron en WooCommerce.
+* `POST /orders/lookup` — estado actual de hasta 100 pedidos (`{"ids": [...]}`); `missing` trae los que ya no existen.
 * `POST /participants/{id}` — nombre, correo, WhatsApp, camiseta, alimentación, alergias y entidad.
 * `POST /assignments/{id}/replace` y `/cancel` — cambiar o retirar una actividad, como "Editar" en Inscritos.
 * `GET /desk/activities`, `POST /desk/preview` y `/desk/register` — un registro nuevo, como "Nuevo Registro".
@@ -48,6 +50,10 @@ La clave anterior deja de funcionar de inmediato. Pega la nueva clave en el CRM 
 Es probable que el servidor elimine la cabecera Authorization. El CRM puede enviar la clave en la cabecera `X-CRM-Key`.
 
 == Changelog ==
+
+= 1.2.0 =
+* Los pedidos que se mandan a la papelera, se restauran o se borran en WooCommerce llegan al CRM.
+* Ruta `POST /orders/lookup` para que el CRM revise los pedidos que ya tiene.
 
 = 1.1.0 =
 * Rutas de escritura para la mesa de registro del CRM y elección del usuario que firma los cambios.
