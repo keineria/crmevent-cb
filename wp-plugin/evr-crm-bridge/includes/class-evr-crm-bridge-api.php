@@ -127,6 +127,16 @@ final class EVR_CRM_Bridge_API {
 			)
 		);
 
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/orders/lookup',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'lookup_orders' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		EVR_CRM_Bridge_Writer::register_routes( $permission );
 	}
 
@@ -228,6 +238,7 @@ final class EVR_CRM_Bridge_API {
 		$participants = self::load_participants( $order_ids );
 
 		$data        = array();
+		$deleted     = array();
 		$next_cursor = null;
 		foreach ( $page as $row ) {
 			$order_id = (int) $row['order_id'];
@@ -240,6 +251,8 @@ final class EVR_CRM_Bridge_API {
 
 			$order = wc_get_order( $order_id );
 			if ( ! $order || ! is_a( $order, 'WC_Abstract_Order' ) ) {
+				// Deleted for good in WooCommerce: the CRM removes its copy.
+				$deleted[] = $order_id;
 				continue;
 			}
 
@@ -252,8 +265,59 @@ final class EVR_CRM_Bridge_API {
 		return new WP_REST_Response(
 			array(
 				'data'        => $data,
+				'deleted'     => $deleted,
 				'next_cursor' => $next_cursor,
 				'has_more'    => $has_more,
+			),
+			200
+		);
+	}
+
+	/**
+	 * POST /orders/lookup — the current state of the orders the CRM already has, so it can notice the ones that
+	 * were deleted or trashed in WooCommerce. Body: {"ids": [1, 2, ...]} (100 at most).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function lookup_orders( $request ) {
+		if ( ! self::evr_tables_exist() ) {
+			return self::unavailable();
+		}
+		if ( ! self::woocommerce_active() ) {
+			return new WP_Error( 'evr_crm_unavailable', __( 'WooCommerce no está activo.', 'evr-crm-bridge' ), array( 'status' => 503 ) );
+		}
+
+		$params = (array) $request->get_json_params();
+		$ids    = isset( $params['ids'] ) && is_array( $params['ids'] ) ? $params['ids'] : array();
+		$ids    = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+		if ( count( $ids ) > 100 ) {
+			return new WP_Error( 'evr_crm_too_many', __( 'Envía como máximo 100 pedidos por consulta.', 'evr-crm-bridge' ), array( 'status' => 422 ) );
+		}
+
+		$existing = array();
+		$missing  = array();
+		foreach ( $ids as $order_id ) {
+			$order = wc_get_order( $order_id );
+			if ( $order && is_a( $order, 'WC_Abstract_Order' ) ) {
+				$existing[ $order_id ] = $order;
+			} else {
+				$missing[] = $order_id;
+			}
+		}
+
+		$participants = self::load_participants( array_keys( $existing ) );
+		$data         = array();
+		foreach ( $existing as $order_id => $order ) {
+			$item                 = self::format_order( $order );
+			$item['participants'] = isset( $participants[ $order_id ] ) ? $participants[ $order_id ] : array();
+			$data[]               = $item;
+		}
+
+		return new WP_REST_Response(
+			array(
+				'data'    => $data,
+				'missing' => $missing,
 			),
 			200
 		);

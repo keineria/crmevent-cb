@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Plugin;
 
+use App\Jobs\ReconcilePluginOrders;
 use App\Jobs\SyncPluginRegistrations;
 use App\Models\Contact;
 use App\Models\EventActivity;
@@ -60,9 +61,13 @@ class RegistrationSyncTest extends TestCase
         ];
     }
 
+    /** Orders that still exist in WooCommerce, for POST /orders/lookup. */
+    private ?array $lookup = null;
+
     private function fakePlugin(array $pages): void
     {
         $queue = $pages;
+        $lookup = &$this->lookup;
         Http::fake([
             self::BASE.'/activities' => Http::response(['data' => [
                 ['id' => 1, 'type' => 'conference', 'name' => 'Conferencias', 'destination' => null, 'event_date' => '2026-10-01', 'start_time' => '08:00:00',
@@ -70,6 +75,12 @@ class RegistrationSyncTest extends TestCase
                 ['id' => 2, 'type' => 'birding', 'name' => 'Salida Km 18', 'destination' => 'Km 18', 'event_date' => '2026-10-02', 'start_time' => '05:00:00',
                     'end_time' => null, 'price' => '245000', 'capacity_total' => 19, 'reserved_count' => 0, 'confirmed_count' => 19, 'status' => 'active', 'updated_at' => ''],
             ]]),
+            self::BASE.'/orders/lookup' => function (Request $r) use (&$lookup) {
+                $ids = $r->data()['ids'];
+                $known = array_values(array_filter($lookup ?? [], fn ($o) => in_array($o['id'], $ids, true)));
+
+                return Http::response(['data' => $known, 'missing' => array_values(array_diff($ids, array_column($known, 'id')))]);
+            },
             self::BASE.'/orders*' => function () use (&$queue) {
                 return Http::response(array_shift($queue) ?? ['data' => [], 'next_cursor' => null, 'has_more' => false]);
             },
@@ -88,7 +99,7 @@ class RegistrationSyncTest extends TestCase
 
         $result = app(RegistrationSync::class)->run($connection);
 
-        $this->assertSame(['activities' => 2, 'orders' => 2, 'participants' => 2, 'new_contacts' => 0, 'has_more' => false], $result);
+        $this->assertSame(['activities' => 2, 'orders' => 2, 'participants' => 2, 'new_contacts' => 0, 'removed' => 0, 'has_more' => false], $result);
         $this->assertSame(2, EventActivity::count());
         $this->assertSame(19, EventActivity::where('evr_id', 2)->value('confirmed_count'));
         $this->assertSame(2, Registration::count());
@@ -177,6 +188,93 @@ class RegistrationSyncTest extends TestCase
         $this->assertSame(1, Contact::where('email', 'ana@example.com')->count());
     }
 
+    public function test_an_order_deleted_in_woocommerce_leaves_the_crm_and_the_contact_history(): void
+    {
+        $connection = $this->connection();
+        $this->fakePlugin([
+            ['data' => [$this->order(501)], 'next_cursor' => ['updated_at' => '2026-09-01 10:00:00', 'order_id' => 501], 'has_more' => false],
+            ['data' => [], 'deleted' => [501], 'next_cursor' => ['updated_at' => '2026-10-26 10:00:00', 'order_id' => 501], 'has_more' => false],
+        ]);
+
+        app(RegistrationSync::class)->run($connection);
+        $ana = Contact::sole();
+        $ana->editions()->create(['year' => 2024, 'role' => 'asistente', 'details' => ['Fuente' => 'Excel']]);
+        $this->assertSame([2024, 2026], $ana->editions()->pluck('year')->sort()->values()->all());
+        $this->assertTrue($ana->fresh()->is_attendee);
+
+        $result = app(RegistrationSync::class)->run($connection->fresh());
+
+        $this->assertSame(1, $result['removed']);
+        $this->assertSame(0, Registration::count());
+        $this->assertSame(0, RegistrationActivity::count());
+        // The 2026 purchase is gone; the history from Excel stays, and so does the person.
+        $this->assertSame([2024], $ana->editions()->pluck('year')->all());
+        $this->assertTrue($ana->fresh()->is_attendee);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'plugin.order-removed']);
+    }
+
+    public function test_a_cancelled_order_no_longer_counts_as_a_purchase(): void
+    {
+        $connection = $this->connection();
+        $cancelled = $this->order(501, 'cancelled', '2026-09-03 10:00:00');
+        $this->fakePlugin([
+            ['data' => [$this->order(501)], 'next_cursor' => ['updated_at' => '2026-09-01 10:00:00', 'order_id' => 501], 'has_more' => false],
+            ['data' => [$cancelled], 'next_cursor' => ['updated_at' => '2026-09-03 10:00:00', 'order_id' => 501], 'has_more' => false],
+        ]);
+
+        app(RegistrationSync::class)->run($connection);
+        $this->assertSame(1, Contact::sole()->editions()->count());
+
+        app(RegistrationSync::class)->run($connection->fresh());
+
+        $ana = Contact::sole();
+        $this->assertSame(0, $ana->editions()->count());
+        $this->assertFalse($ana->is_attendee);
+        $this->assertSame('cancelled', Registration::sole()->status);
+    }
+
+    public function test_reconcile_removes_deleted_orders_and_trashed_ones_stop_counting(): void
+    {
+        $connection = $this->connection();
+        $second = $this->order(502);
+        $second['participants'][0]['order_participant_id'] = 5020;
+        $second['participants'][0]['email'] = 'luis@example.com';
+        $second['participants'][0]['full_name'] = 'Luis Mora';
+        $second['participants'][0]['document_number'] = '777';
+        $this->fakePlugin([['data' => [$this->order(501), $second], 'next_cursor' => null, 'has_more' => false]]);
+        app(RegistrationSync::class)->run($connection);
+        $this->assertSame(2, Contact::whereHas('editions')->count());
+
+        // 501 was emptied from the trash before the bridge reported deletions; 502 sits in the trash.
+        $trashed = $second;
+        $trashed['status'] = 'trash';
+        $this->lookup = [$trashed];
+
+        $result = app(RegistrationSync::class)->reconcile($connection->fresh());
+
+        $this->assertSame(['checked' => 2, 'updated' => 1, 'removed' => 1, 'contacts' => 0], $result);
+        $this->assertSame(['trash'], Registration::pluck('status')->all());
+        $this->assertSame(0, Contact::whereHas('editions')->count());
+        $this->assertSame($result, $connection->fresh()->last_reconcile_result);
+    }
+
+    public function test_reconcile_clears_history_left_by_older_cancellations(): void
+    {
+        $connection = $this->connection();
+        $this->fakePlugin([['data' => [$this->order(501, 'cancelled')], 'next_cursor' => null, 'has_more' => false]]);
+        $ana = Contact::factory()->create(['document_number' => '1020304', 'is_attendee' => true]);
+        // Written by the sync before cancellations were followed.
+        $ana->editions()->create(['year' => 2027, 'role' => 'asistente', 'details' => ['Pedido' => '#499', 'Fuente' => RegistrationSync::EDITION_SOURCE]]);
+        $ana->editions()->create(['year' => 2025, 'role' => 'asistente', 'details' => ['Plan' => 'Conferencias']]);
+        $this->lookup = [];
+
+        $result = app(RegistrationSync::class)->reconcile($connection);
+
+        $this->assertSame(1, $result['contacts']);
+        $this->assertSame([2025], $ana->editions()->pluck('year')->all());
+        $this->assertTrue($ana->fresh()->is_attendee);
+    }
+
     public function test_activity_dates_reach_the_pages_as_plain_dates(): void
     {
         EventActivity::create(['evr_id' => 9, 'type' => 'conference', 'name' => 'X', 'event_date' => '2026-10-01', 'capacity_total' => 10, 'status' => 'active']);
@@ -221,6 +319,8 @@ class RegistrationSyncTest extends TestCase
         $this->actingAs($admin)->post('/settings/plugin/test')->assertSessionHas('success');
         $this->actingAs($admin)->post('/settings/plugin/sync')->assertSessionHas('success');
         Queue::assertPushed(SyncPluginRegistrations::class);
+        $this->actingAs($admin)->post('/settings/plugin/reconcile')->assertSessionHas('success');
+        Queue::assertPushed(ReconcilePluginOrders::class);
 
         $this->actingAs($admin)->get('/settings/plugin')->assertInertia(fn (Assert $p) => $p
             ->component('settings/plugin')

@@ -24,6 +24,8 @@ class PluginConnection extends Model
             'enabled' => 'boolean',
             'last_synced_at' => 'datetime',
             'last_result' => 'array',
+            'last_reconciled_at' => 'datetime',
+            'last_reconcile_result' => 'array',
         ];
     }
 

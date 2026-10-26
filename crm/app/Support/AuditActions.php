@@ -141,6 +141,8 @@ final class AuditActions
         'plugin-connection.updated' => ['settings', 'Cambió la conexión con el plugin'],
         'plugin-connection.tested' => ['settings', 'Probó la conexión con el plugin'],
         'plugin-connection.synced' => ['settings', 'Sincronizó inscripciones del plugin'],
+        'plugin-connection.reconciled' => ['settings', 'Revisó los pedidos borrados en el plugin'],
+        'plugin.order-removed' => ['settings', 'Quitó un pedido que se borró en WordPress'],
     ];
 
     public static function label(string $action): string

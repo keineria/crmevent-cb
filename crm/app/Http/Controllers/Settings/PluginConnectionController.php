@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ReconcilePluginOrders;
 use App\Jobs\SyncPluginRegistrations;
 use App\Models\AuditLog;
 use App\Models\PluginConnection;
@@ -30,6 +31,8 @@ class PluginConnectionController extends Controller
                 'last_status' => $c->last_status,
                 'last_error' => $c->last_error,
                 'last_result' => $c->last_result,
+                'last_reconciled_at' => $c->last_reconciled_at?->toIso8601String(),
+                'last_reconcile_result' => $c->last_reconcile_result,
             ],
             'counts' => [
                 'registrations' => Registration::count(),
@@ -104,5 +107,22 @@ class PluginConnectionController extends Controller
         AuditLog::record('plugin-connection.synced', $connection, $request->boolean('from_start') ? ['desde_el_inicio' => true] : []);
 
         return back()->with('success', 'Sincronización en curso. Las inscripciones aparecerán en unos minutos.');
+    }
+
+    /**
+     * Removes from the CRM the orders deleted or trashed in WordPress (test purchases, mostly), without waiting
+     * for the hourly check.
+     */
+    public function reconcile(): RedirectResponse
+    {
+        $connection = PluginConnection::current();
+        if (! $connection->isConfigured()) {
+            return back()->with('error', 'Guarda primero la URL y la clave.');
+        }
+
+        ReconcilePluginOrders::dispatch();
+        AuditLog::record('plugin-connection.reconciled', $connection);
+
+        return back()->with('success', 'Revisando los pedidos con WordPress. En unos minutos desaparecen los que se borraron allá.');
     }
 }

@@ -55,7 +55,7 @@ class EvrClient
 
     /**
      * @param  array{updated_at: string|null, order_id: int}  $cursor
-     * @return array{data: list<array<string, mixed>>, next_cursor: array{updated_at: string, order_id: int}|null, has_more: bool}
+     * @return array{data: list<array<string, mixed>>, deleted: list<int>, next_cursor: array{updated_at: string, order_id: int}|null, has_more: bool}
      */
     public function orders(array $cursor, ?string $createdAfter, int $limit = 50): array
     {
@@ -68,9 +68,25 @@ class EvrClient
 
         return [
             'data' => $body['data'] ?? [],
+            // Orders deleted for good in WooCommerce (bridge 1.2 and later).
+            'deleted' => array_map('intval', $body['deleted'] ?? []),
             'next_cursor' => $body['next_cursor'] ?? null,
             'has_more' => (bool) ($body['has_more'] ?? false),
         ];
+    }
+
+    /**
+     * Current state of orders the CRM already has (100 at most): the ones still in WooCommerce, trashed ones
+     * included, and the ids that no longer exist. Needs bridge 1.2.
+     *
+     * @param  list<int>  $ids
+     * @return array{data: list<array<string, mixed>>, missing: list<int>}
+     */
+    public function lookupOrders(array $ids): array
+    {
+        $body = $this->post('orders/lookup', ['ids' => array_values($ids)]);
+
+        return ['data' => $body['data'] ?? [], 'missing' => array_map('intval', $body['missing'] ?? [])];
     }
 
     /**
@@ -195,7 +211,7 @@ class EvrClient
     private function describe(Response $response): string
     {
         if ($response->json('code') === 'rest_no_route') {
-            return 'El plugin EVR CRM Bridge de WordPress no tiene esta función. Actualízalo a la versión 1.1 o superior.';
+            return 'El plugin EVR CRM Bridge de WordPress no tiene esta función. Actualízalo a la versión 1.2 o superior.';
         }
 
         return match ($response->status()) {

@@ -25,6 +25,7 @@ class Registration extends Model
         'refunded' => 'Reembolsada',
         'failed' => 'Fallida',
         'checkout-draft' => 'Borrador',
+        'trash' => 'En la papelera',
     ];
 
     protected function casts(): array
