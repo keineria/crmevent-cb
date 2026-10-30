@@ -18,6 +18,27 @@ class ContactController extends Controller
 {
     private const TYPES = ['asistentes' => 'is_attendee', 'interesados' => 'is_interested', 'suscriptores' => 'is_subscriber'];
 
+    /**
+     * Sortable columns: the columns (or expressions) each header orders by. "Value is missing" sorts last
+     * in both directions so a blank never hides the people who have data.
+     *
+     * @var array<string, list<string>>
+     */
+    private const SORTS = [
+        'ultima_compra' => ['last_purchase_at'],
+        'contacto' => ["coalesce(nullif(first_name, ''), nullif(last_name, ''), email, phone)", 'last_name'],
+        'usuario' => ['(not (is_attendee or last_purchase_at is not null))'],
+        'correo' => ['email'],
+        'telefono' => ['phone'],
+        'tipo' => ['(not is_attendee)', '(not is_interested)', '(not is_subscriber)'],
+        'producto' => ["nullif(preferred_products, '[]')"],
+        'ubicacion' => ['country', 'city'],
+        'veces' => ['nullif(visits, 0)'],
+        'anios' => ['last_year'],
+        'estrellas' => ['engagement_stars'],
+        'estado' => ['(unsubscribed_at is not null)'],
+    ];
+
     public function index(Request $request): Response
     {
         $filters = $request->validate([
@@ -28,7 +49,12 @@ class ContactController extends Controller
             'producto' => ['nullable', Rule::in(array_keys(Contact::PRODUCTS))],
             'estrellas' => ['nullable', 'integer', 'between:1,5'],
             'anio' => ['nullable', 'integer', 'between:2000,2100'],
+            'orden' => ['nullable', Rule::in(array_keys(self::SORTS))],
+            'dir' => ['nullable', 'in:asc,desc'],
         ]);
+
+        $sort = $filters['orden'] ?? 'ultima_compra';
+        $direction = $filters['dir'] ?? ($sort === 'ultima_compra' ? 'desc' : 'asc');
 
         $contacts = Contact::query()
             ->when($filters['q'] ?? null, function (Builder $query, string $term) {
@@ -51,9 +77,11 @@ class ContactController extends Controller
             ->when($filters['anio'] ?? null, fn (Builder $q, int $year) => $q->whereHas('editions', fn (Builder $e) => $e->where('year', $year)))
             ->with('editions:id,contact_id,year,role')
             ->withHistory()
+            ->tap(fn (Builder $q) => $this->applySort($q, $sort, $direction))
             ->orderByDesc('last_purchase_at')
             ->orderByDesc('last_year')
             ->orderByDesc('updated_at')
+            ->orderBy('id')
             ->paginate(25)
             ->withQueryString()
             ->through(fn (Contact $c) => [
@@ -78,6 +106,7 @@ class ContactController extends Controller
         return Inertia::render('contacts/index', [
             'contacts' => $contacts,
             'filters' => (object) $filters,
+            'sort' => ['by' => $sort, 'dir' => $direction],
             'stats' => [
                 'total' => Contact::count(),
                 'attendees' => Contact::where('is_attendee', true)->count(),
@@ -93,6 +122,14 @@ class ContactController extends Controller
             'canImport' => $request->user()->hasAnyRole(Roles::CONTACT_IMPORTERS),
             'canEdit' => $request->user()->hasAnyRole(Roles::CONTACT_EDITORS),
         ]);
+    }
+
+    private function applySort(Builder $query, string $sort, string $direction): void
+    {
+        foreach (self::SORTS[$sort] as $expression) {
+            // Column names and aliases are fixed above, never user input.
+            $query->orderByRaw("({$expression}) is null")->orderByRaw("{$expression} {$direction}");
+        }
     }
 
     public function show(Request $request, Contact $contact): Response
