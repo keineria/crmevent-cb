@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, Code, Copy, Search, Upload, UserPlus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Code, Copy, Search, Upload, UserPlus } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
 
 type Status = 'activo' | 'desinscrito';
@@ -50,11 +50,16 @@ interface Filters {
     producto?: string;
     estrellas?: number;
     anio?: number;
+    orden?: string;
+    dir?: SortDir;
 }
+
+type SortDir = 'asc' | 'desc';
 
 interface PageProps {
     contacts: Paginated<ContactRow>;
     filters: Filters;
+    sort: { by: string; dir: SortDir };
     stats: { total: number; attendees: number; interested: number; subscribers: number; clients: number; active: number; unsubscribed: number };
     products: Record<string, string>;
     years: number[];
@@ -77,8 +82,24 @@ const STATUS: Record<Status, { label: string; className: string }> = {
 
 const number = new Intl.NumberFormat('es-CO');
 
+// Text columns start A→Z; dates, counts and stars start with the highest first.
+const COLUMNS: { key: string; label: string; firstDir: SortDir }[] = [
+    { key: 'ultima_compra', label: 'Última compra', firstDir: 'desc' },
+    { key: 'contacto', label: 'Contacto', firstDir: 'asc' },
+    { key: 'usuario', label: 'Usuario', firstDir: 'asc' },
+    { key: 'correo', label: 'Correo', firstDir: 'asc' },
+    { key: 'telefono', label: 'Teléfono', firstDir: 'asc' },
+    { key: 'tipo', label: 'Tipo', firstDir: 'asc' },
+    { key: 'producto', label: 'Producto preferido', firstDir: 'asc' },
+    { key: 'ubicacion', label: 'Ubicación', firstDir: 'asc' },
+    { key: 'veces', label: 'Veces en la feria', firstDir: 'desc' },
+    { key: 'anios', label: 'Años', firstDir: 'desc' },
+    { key: 'estrellas', label: 'Estrellas', firstDir: 'desc' },
+    { key: 'estado', label: 'Estado', firstDir: 'asc' },
+];
+
 export default function ContactsIndex() {
-    const { contacts, filters, stats, products, years, formEndpoint, canImport, canEdit } = usePage<PageProps>().props;
+    const { contacts, filters, sort, stats, products, years, formEndpoint, canImport, canEdit } = usePage<PageProps>().props;
     const [q, setQ] = useState(filters.q ?? '');
 
     const apply = (next: Filters) => {
@@ -86,6 +107,9 @@ export default function ContactsIndex() {
         const query = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined && v !== ''));
         router.get('/contacts', query, { preserveState: true, preserveScroll: true, replace: true });
     };
+
+    const sortBy = (column: (typeof COLUMNS)[number]) =>
+        apply({ orden: column.key, dir: sort.by === column.key ? (sort.dir === 'asc' ? 'desc' : 'asc') : column.firstDir });
 
     const submitSearch: FormEventHandler = (e) => {
         e.preventDefault();
@@ -212,29 +236,35 @@ export default function ContactsIndex() {
                         <table className="w-full min-w-[1380px] text-sm">
                             <thead className="bg-muted/50 text-muted-foreground text-left text-xs">
                                 <tr>
-                                    {[
-                                        'Contacto',
-                                        'Usuario',
-                                        'Correo',
-                                        'Teléfono',
-                                        'Tipo',
-                                        'Producto preferido',
-                                        'Ubicación',
-                                        'Veces en la feria',
-                                        'Años',
-                                        'Última compra',
-                                        'Estrellas',
-                                        'Estado',
-                                    ].map((h) => (
-                                        <th key={h} scope="col" className="px-4 py-3 font-medium whitespace-nowrap">
-                                            {h}
-                                        </th>
-                                    ))}
+                                    {COLUMNS.map((column) => {
+                                        const active = sort.by === column.key;
+                                        const Icon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown;
+                                        return (
+                                            <th
+                                                key={column.key}
+                                                scope="col"
+                                                aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+                                                className="px-4 py-3 font-medium whitespace-nowrap"
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() => sortBy(column)}
+                                                    className={`hover:text-foreground focus-visible:ring-ring -mx-1 inline-flex items-center gap-1 rounded px-1 focus-visible:ring-2 focus-visible:outline-hidden ${active ? 'text-foreground' : ''}`}
+                                                >
+                                                    {column.label}
+                                                    <Icon className={`size-3.5 ${active ? '' : 'opacity-40'}`} aria-hidden />
+                                                </button>
+                                            </th>
+                                        );
+                                    })}
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
                                 {contacts.data.map((c) => (
                                     <tr key={c.id} className="align-top">
+                                        <td className="px-4 py-3 whitespace-nowrap tabular-nums">
+                                            {c.last_purchase_at ? shortDate.format(new Date(c.last_purchase_at)) : '—'}
+                                        </td>
                                         <td className="px-4 py-3">
                                             <Link href={`/contacts/${c.id}`} className="font-medium underline-offset-4 hover:underline">
                                                 {c.name ?? c.email ?? c.phone ?? 'Sin nombre'}
@@ -259,9 +289,6 @@ export default function ContactsIndex() {
                                         <td className="text-muted-foreground px-4 py-3">{c.location ?? '—'}</td>
                                         <td className="px-4 py-3 text-center tabular-nums">{c.visits > 0 ? c.visits : '—'}</td>
                                         <td className="text-muted-foreground px-4 py-3 tabular-nums">{c.years.length ? c.years.join(', ') : '—'}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap tabular-nums">
-                                            {c.last_purchase_at ? shortDate.format(new Date(c.last_purchase_at)) : '—'}
-                                        </td>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <Stars value={c.stars} />
                                         </td>
